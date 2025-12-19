@@ -1,44 +1,34 @@
-# Base image with Python 3.11
-FROM python:3.11-slim AS base
+# Usamos una imagen ligera de Python 3.11
+FROM python:3.11-slim
 
-# Recommended environment variables
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV UV_SYSTEM_PYTHON=1
-
+# Directorio de trabajo
 WORKDIR /app
 
-# Intall the requiered dependencies of the system 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Instalar herramientas básicas
+RUN apt-get update && apt-get install -y \
     build-essential \
-    libjpeg-dev \
-    zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv and the dependencies of the project
-FROM base AS builder
-# Install uv
-RUN pip install --no-cache-dir uv
-# Copy the dependencies file
+# Copiar archivos de configuración de dependencias
 COPY pyproject.toml .
-# Copy the lock file if exists
-COPY uv.lock* .
-# Install the dependencies of the project in the system's environment
-RUN uv pip install --system --no-cache .
 
-# Copy the source code and prepare the execution environment
-FROM base AS runtime
-# Copy the installed dependencies
-COPY --from=builder /usr/local /usr/local
-# Copy the source code of the API, logic and home.html
-COPY api ./api
-COPY mylib ./mylib
-COPY templates ./templates
-# Copy files for the serialized model (must be present locally)
-COPY model.onnx .
-COPY model.onnx.data* .
-COPY class_labels.json .
-# Expose the port associated with the API created with FastAPI
+# Instalar dependencias del sistema y del proyecto
+# Usamos pip directamente leyendo el toml
+RUN pip install --no-cache-dir .
+
+# Copiar el código fuente
+COPY mylib/ mylib/
+COPY api/ api/
+COPY data/ data/
+# Copiamos mlruns temporalmente para que la API tenga algo que cargar 
+# (En producción real usaríamos un bucket S3 o servidor remoto MLFlow)
+COPY mlruns/ mlruns/
+
+# Exponer el puerto de la API
 EXPOSE 8000
-# Default command: it starts the API with uvicorn
+
+# Variables de entorno por defecto
+ENV MLFLOW_TRACKING_URI=mlruns
+
+# Comando para arrancar la API
 CMD ["uvicorn", "api.api:app", "--host", "0.0.0.0", "--port", "8000"]

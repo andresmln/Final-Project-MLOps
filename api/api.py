@@ -1,241 +1,119 @@
-# Import the libraries, classes and functions
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import pandas as pd
+import mlflow.sklearn
+import os
 import uvicorn
-import io
-import numpy as np
-from PIL import Image
-from fastapi import FastAPI, Form, File, UploadFile, HTTPException
-from fastapi.templating import Jinja2Templates
-from fastapi.requests import Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from mylib.data_preprocess import clean_data, encode_categorical_data
 
-# Import your image processing functions
-from mylib.inference_image_processor import (
-    predict_image,
-    resize_image,
-    convert_to_grayscale,
-    rotate_image,
-    apply_blur,
-    normalize_image,
-    get_image_info
-)
+app = FastAPI(title="Telco Churn Prediction API")
 
-# Create an instance of FastAPI
-app = FastAPI(
-    title="API for Image Processing",
-    description="API to perform image processing operations using mylib.inference_image_processor",
-    version="1.0.0",
-)
+# Rutas globales para cargar artefactos
+# NOTA: En un entorno real, esto se cargaría dinámicamente o desde un Model Registry.
+# Para la práctica, buscaremos el último run exitoso en mlruns o cargamos localmente si lo exportaste.
+LOGGED_MODEL_URI = "models:/Telco_Churn_Project/Production" # Si usas Model Registry
+# O alternativamente, ruta local si acabas de entrenar:
+MLRUNS_DIR = "mlruns"
 
-# We use the templates folder to obtain HTML files
-templates = Jinja2Templates(directory="templates")
+# Variables globales para modelo y scaler
+model = None
+scaler = None
 
+class CustomerData(BaseModel):
+    gender: str
+    SeniorCitizen: int
+    Partner: str
+    Dependents: str
+    tenure: int
+    PhoneService: str
+    MultipleLines: str
+    InternetService: str
+    OnlineSecurity: str
+    OnlineBackup: str
+    DeviceProtection: str
+    TechSupport: str
+    StreamingTV: str
+    StreamingMovies: str
+    Contract: str
+    PaperlessBilling: str
+    PaymentMethod: str
+    MonthlyCharges: float
+    TotalCharges: str  # Viene como string a veces, lo limpiamos dentro
 
-# --- Utility function to load image ---
-# This is a helper to avoid repeating code
-async def load_image_from_uploadfile(file: UploadFile) -> Image.Image:
-    """Reads an UploadFile and converts it to a PIL Image."""
+@app.on_event("startup")
+def load_artifacts():
+    global model, scaler
     try:
-        contents = await file.read()
-        image = Image.open(io.BytesIO(contents))
-        return image
+        print("Cargando modelo y scaler más recientes...")
+        # Buscamos el último experimento exitoso para cargar sus artefactos
+        # (Este es un truco para la práctica si no usas MLflow Model Registry explícito)
+        experiment = mlflow.get_experiment_by_name("Telco_Churn_Project")
+        if experiment is None:
+             raise Exception("No se encontró el experimento en MLFlow")
+        
+        runs = mlflow.search_runs(
+            experiment_ids=[experiment.experiment_id],
+            order_by=["start_time DESC"],
+            max_results=1
+        )
+        
+        if runs.empty:
+            raise Exception("No hay runs registrados todavía.")
+            
+        last_run_id = runs.iloc[0].run_id
+        print(f"Cargando artefactos del Run ID: {last_run_id}")
+        
+        # Cargar Modelo XGBoost (usamos sklearn flavor porque así lo guardamos)
+        model = mlflow.sklearn.load_model(f"runs:/{last_run_id}/best_model")
+        # Cargar Scaler
+        scaler = mlflow.sklearn.load_model(f"runs:/{last_run_id}/scaler")
+        
+        print("✅ Artefactos cargados correctamente.")
     except Exception as e:
-        # Pylint Fix (W0707): Explicit exception chaining
-        raise HTTPException(status_code=400, detail=f"Invalid image file: {e}") from e
+        print(f"❌ Error cargando modelo: {e}")
+        # No matamos la app, pero las predicciones fallarán si no se arregla
 
-
-# --- Endpoints ---
-
-@app.get("/", response_class=HTMLResponse)
-def home(request: Request):
-    """Serves the home.html page."""
-    return templates.TemplateResponse(request, "home.html")
-
+@app.get("/")
+def home():
+    return {"message": "Telco Churn API is running"}
 
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)):
-    """
-    Predicts the class of an image using the trained MobileNetV2 model.
-    Expects a 'multipart/form-data' with a 'file' field.
-    """
+def predict_churn(customer: CustomerData):
+    global model, scaler
+    if not model or not scaler:
+        raise HTTPException(status_code=500, detail="Model not loaded")
+    
     try:
-        image = await load_image_from_uploadfile(file)
-        prediction = predict_image(image)
+        # 1. Convertir JSON a DataFrame
+        input_data = customer.dict()
+        df = pd.DataFrame([input_data])
         
-        # Check if the prediction string indicates an internal error
-        if prediction.startswith("Error") or prediction.startswith("Prediction Error"):
-            raise HTTPException(status_code=500, detail=prediction)
-            
-        return {"prediction": prediction}
-    except HTTPException as he:
-        raise he # Re-raise HTTP exceptions directly
+        # 2. Limpieza (Reutilizamos funciones de mylib)
+        df = clean_data(df)
+        
+        # 3. Encoding (Reutilizamos lógica)
+        df = encode_categorical_data(df)
+        
+        # 4. Escalado (Usamos el scaler cargado, NO uno nuevo)
+        numeric_cols = ['tenure', 'MonthlyCharges', 'TotalCharges']
+        # Aseguramos que las columnas existan y estén en orden
+        df[numeric_cols] = scaler.transform(df[numeric_cols])
+        
+        # 5. Predecir
+        # Asegurar que el orden de columnas coincida con el entrenamiento
+        # (XGBoost es sensible al orden, obtenemos las features del modelo)
+        prediction = model.predict(df)
+        probability = model.predict_proba(df)[:, 1]
+        
+        result = "Yes" if prediction[0] == 1 else "No"
+        
+        return {
+            "churn_prediction": result,
+            "churn_probability": float(probability[0])
+        }
+        
     except Exception as e:
-        # Pylint Fix (W0707): Explicit exception chaining
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=f"Error processing data: {str(e)}")
 
-
-@app.post("/resize", response_class=StreamingResponse)
-async def resize(
-    file: UploadFile = File(...),
-    width: int = Form(...),
-    height: int = Form(...)
-):
-    """
-    Resizes an image.
-    Expects 'multipart/form-data' with 'file', 'width', and 'height' fields.
-    Returns the resized image as a downloadable JPEG file.
-    """
-    try:
-        # Our resize_image function takes a file-like object directly
-        resized_img = resize_image(file.file, width, height)
-        
-        # Save resized image to a memory buffer
-        buffer = io.BytesIO()
-        resized_img.save(buffer, format="JPEG")
-        buffer.seek(0)
-        
-        return StreamingResponse(
-            buffer, 
-            media_type="image/jpeg",
-            headers={"Content-Disposition": "attachment; filename=resized_image.jpg"}
-        )
-    except Exception as e:
-        # Pylint Fix (W0707): Explicit exception chaining
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-@app.post("/info")
-async def info_endpoint(file: UploadFile = File(...)): # Pylint Fix (W0621): Renamed function
-    """
-    Gets metadata from an image (size, mode, format, etc.).
-    Expects 'multipart/form-data' with a 'file' field.
-    """
-    try:
-        image = await load_image_from_uploadfile(file)
-        image_info = get_image_info(image) # Pylint Fix (W0621): Renamed variable
-        return image_info
-    except Exception as e:
-        # Pylint Fix (W0707): Explicit exception chaining
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-@app.post("/grayscale", response_class=StreamingResponse)
-async def grayscale(file: UploadFile = File(...)):
-    """
-    Converts an image to grayscale.
-    Expects 'multipart/form-data' with a 'file' field.
-    Returns the grayscale image as a downloadable PNG file.
-    """
-    try:
-        image = await load_image_from_uploadfile(file)
-        gray_img = convert_to_grayscale(image)
-        
-        buffer = io.BytesIO()
-        gray_img.save(buffer, format="PNG")
-        buffer.seek(0)
-        
-        return StreamingResponse(
-            buffer, 
-            media_type="image/png",
-            headers={"Content-Disposition": "attachment; filename=grayscale_image.png"}
-        )
-    except Exception as e:
-        # Pylint Fix (W0707): Explicit exception chaining
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-@app.post("/rotate", response_class=StreamingResponse)
-async def rotate(
-    file: UploadFile = File(...),
-    angle: float = Form(...)
-):
-    """
-    Rotates an image by a given angle.
-    Expects 'multipart/form-data' with 'file' and 'angle' fields.
-    Returns the rotated image as a downloadable PNG file.
-    """
-    try:
-        image = await load_image_from_uploadfile(file)
-        rotated_img = rotate_image(image, angle)
-        
-        buffer = io.BytesIO()
-        # Use PNG for rotate as it might create transparent areas
-        rotated_img.save(buffer, format="PNG")
-        buffer.seek(0)
-        
-        return StreamingResponse(
-            buffer, 
-            media_type="image/png",
-            headers={"Content-Disposition": "attachment; filename=rotated_image.png"}
-        )
-    except Exception as e:
-        # Pylint Fix (W0707): Explicit exception chaining
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-@app.post("/blur", response_class=StreamingResponse)
-async def blur(
-    file: UploadFile = File(...),
-    radius: int = Form(default=2)
-):
-    """
-    Applies a Gaussian blur to an image.
-    Expects 'multipart/form-data' with 'file' and optional 'radius'.
-    Returns the blurred image as a downloadable JPEG file.
-    """
-    try:
-        image = await load_image_from_uploadfile(file)
-        blurred_img = apply_blur(image, radius)
-        
-        buffer = io.BytesIO()
-        blurred_img.save(buffer, format="JPEG")
-        buffer.seek(0)
-        
-        return StreamingResponse(
-            buffer, 
-            media_type="image/jpeg",
-            headers={"Content-Disposition": "attachment; filename=blurred_image.jpg"}
-        )
-    except Exception as e:
-        # Pylint Fix (W0707): Explicit exception chaining
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-@app.post("/normalize", response_class=StreamingResponse)
-async def normalize(file: UploadFile = File(...)):
-    """
-    Normalizes an image and returns a visualization of the normalized array.
-    Expects 'multipart/form-data' with a 'file' field.
-    Returns: A downloadable PNG image representing the normalized data.
-    """
-    try:
-        image = await load_image_from_uploadfile(file)
-        
-        # Get the normalized numpy array (values roughly 0-1 or standardized)
-        norm_array = normalize_image(image)
-        
-        # To make it downloadable/viewable, we must convert the float array back to uint8 [0-255]
-        # We perform a simple Min-Max scaling to map the values to 0-255 for visualization
-        norm_min, norm_max = norm_array.min(), norm_array.max()
-        norm_visual = (norm_array - norm_min) / (norm_max - norm_min) * 255.0
-        norm_visual = norm_visual.astype(np.uint8)
-        
-        # Create a PIL image from the array
-        visual_image = Image.fromarray(norm_visual)
-        
-        buffer = io.BytesIO()
-        visual_image.save(buffer, format="PNG")
-        buffer.seek(0)
-        
-        return StreamingResponse(
-            buffer,
-            media_type="image/png",
-            headers={"Content-Disposition": "attachment; filename=normalized_visualization.png"}
-        )
-    except Exception as e:
-        # Pylint Fix (W0707): Explicit exception chaining
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-# Entry point (for direct execution only)
 if __name__ == "__main__":
-    uvicorn.run("api.api:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
