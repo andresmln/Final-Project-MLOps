@@ -1,94 +1,40 @@
-"""
-Unit Testing of the application's logic (Image Processor)
-"""
-import io
-import os
 import pytest
-import numpy as np
-from PIL import Image
-from mylib.inference_image_processor import (
-    predict_image, 
-    resize_image, 
-    convert_to_grayscale, 
-    rotate_image,
-    apply_blur, 
-    normalize_image, 
-    get_image_info
-)
+from mylib.logic import churn_prediction
+from unittest.mock import MagicMock
+import pandas as pd
 
-# --- Fixtures ---
-
-@pytest.fixture
-def dummy_image():
-    """Creates a simple 224x224 RGB red image for testing."""
-    img = Image.new("RGB", (224, 224), color="red")
-    return img
-
-@pytest.fixture
-def dummy_image_file(dummy_image):
-    """Creates a file-like object (buffer) containing the dummy image."""
-    buffer = io.BytesIO()
-    dummy_image.save(buffer, format="JPEG")
-    buffer.seek(0)
-    return buffer
-
-# --- Tests ---
-
-def test_resize_image(dummy_image_file):
-    """Test that the image is resized to the correct dimensions."""
-    width, height = 50, 50
-    resized_img = resize_image(dummy_image_file, width, height)
-    assert resized_img.size == (width, height)
-
-def test_convert_to_grayscale(dummy_image):
-    """Test that the image is converted to grayscale (Mode 'L')."""
-    gray_img = convert_to_grayscale(dummy_image)
-    assert gray_img.mode == "L"
-
-def test_rotate_image(dummy_image):
-    """Test that the image rotates without errors."""
-    angle = 90
-    rotated_img = rotate_image(dummy_image, angle)
-    assert isinstance(rotated_img, Image.Image)
-
-def test_apply_blur(dummy_image):
-    """Test that the blur filter runs and returns an image."""
-    blurred_img = apply_blur(dummy_image, radius=2)
-    assert isinstance(blurred_img, Image.Image)
-
-def test_normalize_image(dummy_image):
-    """Test that normalization returns a numpy array with values between 0 and 1."""
-    norm_array = normalize_image(dummy_image)
-    assert isinstance(norm_array, np.ndarray)
-    assert norm_array.min() >= 0.0
-    assert norm_array.max() <= 1.0
-
-def test_get_image_info(dummy_image):
-    """Test that metadata extraction returns correct information."""
-    info = get_image_info(dummy_image)
-    assert isinstance(info, dict)
-    assert info["width"] == 224
-    assert info["height"] == 224
-    assert info["is_color"] is True
-
-# --- Prediction Test (Conditional) ---
-
-def test_predict_image_behavior(dummy_image):
+def test_churn_prediction_structure():
     """
-    Test prediction logic.
-    - If model exists: Checks if it returns a valid string (prediction).
-    - If model missing: Checks if it returns the expected error message.
+    Prueba que la función de lógica orquesta los pasos correctamente.
+    Usamos Mocks para no necesitar un modelo real entrenado durante este test unitario.
     """
-    prediction = predict_image(dummy_image)
+    # 1. Datos de entrada (Input Mock)
+    customer_data = {
+        "gender": "Female", "SeniorCitizen": 0, "Partner": "Yes", "Dependents": "No",
+        "tenure": 1, "PhoneService": "No", "MultipleLines": "No phone service",
+        "InternetService": "DSL", "OnlineSecurity": "No", "OnlineBackup": "Yes",
+        "DeviceProtection": "No", "TechSupport": "No", "StreamingTV": "No",
+        "StreamingMovies": "No", "Contract": "Month-to-month", "PaperlessBilling": "Yes",
+        "PaymentMethod": "Electronic check", "MonthlyCharges": 29.85, "TotalCharges": "29.85"
+    }
+
+    # 2. Crear Mocks para Modelo y Scaler
+    mock_model = MagicMock()
+    mock_model.predict.return_value = [1] # Simula que predice "Yes" (1)
+    mock_model.predict_proba.return_value = [[0.2, 0.8]] # Simula 80% probabilidad
     
-    # Check if artifacts exist locally to determine expected behavior
-    artifacts_exist = os.path.exists("model.onnx") and os.path.exists("class_labels.json")
-    
-    if artifacts_exist:
-        # If model is present, we expect a real class name (str)
-        assert isinstance(prediction, str)
-        assert not prediction.startswith("Error") 
-    else:
-        # If model is missing, we expect our handled error message
-        assert isinstance(prediction, str)
-        assert prediction.startswith("Error") or "not loaded" in prediction
+    mock_scaler = MagicMock()
+    # Cuando el scaler recibe un DataFrame, devuelve el mismo (o numpy array)
+    mock_scaler.transform.return_value = pd.DataFrame(
+        {'tenure': [0.1], 'MonthlyCharges': [0.2], 'TotalCharges': [0.3]}
+    )
+
+    # 3. Ejecutar la función
+    result, prob = churn_prediction(customer_data, mock_model, mock_scaler)
+
+    # 4. Validaciones
+    assert result == "Yes"
+    assert prob == 0.8
+    # Verificar que se llamó al scaler y al modelo
+    mock_scaler.transform.assert_called_once()
+    mock_model.predict.assert_called_once()
