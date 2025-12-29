@@ -36,6 +36,8 @@ def encode_data(df):
     Applies One-Hot Encoding.
     """
     df = df.copy()
+
+    df['SeniorCitizen'] = pd.to_numeric(df['SeniorCitizen'], errors='coerce').fillna(0).astype(int)
     
     # 1. Manual Binary Mapping (Safe & Explicit)
     # Mapping these specifically guarantees 0/1 integers
@@ -73,14 +75,13 @@ def get_processed_data(filepath, target_col='Churn', test_size=0.2, seed=42):
     )
     
     # 6. Scale Numerical Cols
-    # (Important: Scale AFTER split to avoid data leakage)
     numeric_cols = ['tenure', 'MonthlyCharges', 'TotalCharges']
     scaler = StandardScaler()
     
     X_train[numeric_cols] = scaler.fit_transform(X_train[numeric_cols])
     X_test[numeric_cols] = scaler.transform(X_test[numeric_cols])
     
-    # 7. CRITICAL STEP FOR MLOPS: Capture the final column structure
+    # 7. Capture the final column structure
     # We need this list to align future data (inference) to this exact shape
     feature_names = X_train.columns.tolist()
     
