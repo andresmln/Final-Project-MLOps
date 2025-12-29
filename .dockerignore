@@ -1,0 +1,18 @@
+# Ignore huge data folders
+archive/
+data/
+
+# Ignore logs and virtual environments
+mlruns/
+venv/
+.venv/
+.git/
+
+# Ignore python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore local notebook checkpoints
+.ipynb_checkpoints
