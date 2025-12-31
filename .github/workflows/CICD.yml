@@ -127,8 +127,7 @@ jobs:
         with:
           name: model-artifacts
           path: .
-      - name: List files for debugging
-        run: ls -R
+      
       - name: Push to Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
