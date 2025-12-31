@@ -137,37 +137,70 @@ jobs:
           git config --global user.email "action@github.com"
           git config --global user.name "GitHub Action"
 
-          # 1. Crear una rama "huérfana" (sin historia previa)
-          #    Esto nos permite empezar desde cero sin borrar la carpeta .git
+          # -------------------------------------------------------
+          # 1. PREPARACIÓN DE LA RAMA LIMPIA (Orphan Branch)
+          # -------------------------------------------------------
+          # Creamos una rama nueva sin historia para evitar subir archivos pesados antiguos (PDF, ZIP)
           git checkout --orphan deploy-branch
-          
-          # 2. "Des-trackear" todos los archivos actuales de esta nueva rama
-          #    Esto deja los archivos en la carpeta, pero Git "olvida" que existen por un momento
-          git reset
-          
-          # 3. Añadir el remoto
-          git remote add space https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME
+          git reset --hard  # Reseteamos para dejar el staging area vacío
 
-          # 4. Configurar LFS
+          # -------------------------------------------------------
+          # 2. CONFIGURACIÓN DEL SPACE (Docker y README)
+          # -------------------------------------------------------
+          
+          # A) Mover Dockerfile a la raíz (Requisito de HF Spaces)
+          # Git reset borró los archivos del índice, pero siguen en el disco.
+          # Tenemos que recuperarlos del checkout original o simplemente operar con lo que hay.
+          # NOTA: Al hacer checkout --orphan y reset, los archivos siguen en el directorio de trabajo.
+          
+          if [ -f "api/Dockerfile" ]; then
+            cp api/Dockerfile .
+            echo "✅ Dockerfile movido a la raíz"
+          else
+            echo "⚠️ ADVERTENCIA: No se encontró api/Dockerfile"
+          fi
+
+          # B) Crear README.md con la metadata para Docker
+          echo "---" > README.md
+          echo "title: MLOps Telco Churn" >> README.md
+          echo "emoji: 🚀" >> README.md
+          echo "colorFrom: blue" >> README.md
+          echo "colorTo: indigo" >> README.md
+          echo "sdk: docker" >> README.md
+          echo "app_port: 7860" >> README.md
+          echo "pinned: false" >> README.md
+          echo "---" >> README.md
+
+          # -------------------------------------------------------
+          # 3. PREPARAR GIT Y LFS
+          # -------------------------------------------------------
+          git remote add space https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME
+          
           git lfs install
           git lfs track "*.joblib"
           git add .gitattributes
 
-          # 5. Añadir A MANO solo lo que queremos subir
-          #    (Aquí es donde EXCLUIMOS el PDF y el ZIP simplemente no añadiéndolos)
+          # -------------------------------------------------------
+          # 4. AÑADIR ARCHIVOS AL COMMIT
+          # -------------------------------------------------------
           
-          # Archivos del modelo y métricas
+          # A) Artefactos generados (descargados del paso anterior)
           git add -f model.joblib scaler.joblib feature_names.joblib threshold.joblib metrics.json
-          
-          # Archivos de código (Ajusta esto si tus carpetas se llaman diferente)
-          git add app.py requirements.txt
-          # Si tienes carpetas de código, añádelas así:
-          if [ -d "mylib" ]; then git add mylib/; fi
-          if [ -d "api" ]; then git add api/; fi
-          # Si tienes un Dockerfile
-          if [ -f "Dockerfile" ]; then git add Dockerfile; fi
 
-          # 6. Commit y Push
-          #    Fíjate en el comando push: enviamos nuestra rama 'deploy-branch' a la rama 'main' del Space
-          git commit -m "Deploy clean version (Artifacts + Code)"
+          # B) Archivos de Configuración y Arranque
+          git add README.md Dockerfile
+          git add requirements.txt || true
+          git add main.py || true
+          git add Preprocessing.py || true
+          
+          # C) Carpetas de código
+          if [ -d "api" ]; then git add api/; fi
+          if [ -d "mylib" ]; then git add mylib/; fi
+          if [ -d "templates" ]; then git add templates/; fi
+          if [ -d "cli" ]; then git add cli/; fi
+
+          # -------------------------------------------------------
+          # 5. ENVIAR A HUGGING FACE
+          # -------------------------------------------------------
+          git commit -m "Deploy from GitHub Actions (Docker + Metrics)"
           git push --force space deploy-branch:main
