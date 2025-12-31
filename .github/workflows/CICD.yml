@@ -76,12 +76,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # DESCARGAMOS EL MODELO ENTRENADO EN LA RAÍZ PARA QUE DOCKER LO VEA
+      # DESCARGAMOS EL MODELO EN LA CARPETA ESPECIFICA PARA QUE DOCKER LO VEA 
       - name: Download Model Artifacts
         uses: actions/download-artifact@v4
         with:
           name: model-artifacts
-          path: . 
+          path: api/models_local 
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -101,8 +101,8 @@ jobs:
           context: .
           file: api/Dockerfile
           push: true
-          # Reemplaza 'mlops-lab3-api' por el nombre que prefieras
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/mlops-lab3-api:latest
+          
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/mlops-final_project_churn-api:latest
 
       # Limpieza del directorio MLFlow (requisito académico común)
       - name: Clean MLFlow Directory
