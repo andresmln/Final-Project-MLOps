@@ -27,11 +27,23 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install wheel setuptools
-          # Instalamos dependencias generales y específicas
-          if [ -f api/requirements.txt ]; then pip install -r api/requirements.txt; fi
-          # Dependencias extra necesarias para el script de entrenamiento
+          
+          # 1. Mira si existe dentro de la carpeta api/
+          if [ -f api/requirements.txt ]; then 
+            sed -i '/pywin32/d' api/requirements.txt
+            sed -i '/winshell/d' api/requirements.txt
+            pip install -r api/requirements.txt
+          
+          # 2. O si existe en la raíz (aquí entra tu elif)
+          elif [ -f requirements.txt ]; then
+            sed -i '/pywin32/d' requirements.txt
+            sed -i '/winshell/d' requirements.txt
+            pip install -r requirements.txt
+          fi
+          
+          # 3. Instalación de seguridad por si lo anterior falla
           pip install shap optuna xgboost mlflow scikit-learn pandas python-dotenv matplotlib joblib
 
       - name: Train Model & Optimize (Optuna + MLFlow)

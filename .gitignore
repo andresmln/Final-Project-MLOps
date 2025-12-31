@@ -39,6 +39,7 @@ processed_data_audit.csv
 mlruns/
 .trash/
 
+
 # ==========================
 # 4. IDEs & Tools
 # ==========================
@@ -59,3 +60,7 @@ htmlcov/
 # Ignore the local monitoring database files if you run docker-compose
 prometheus_data/
 grafana_data/
+
+# Ignore specific files that we deleted in data 
+confusion_matrix.png
+processed_data_audit.csv
