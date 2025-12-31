@@ -45,9 +45,9 @@ jobs:
 
           # 3. Instalación de seguridad por si lo anterior falla
           pip install shap optuna xgboost mlflow scikit-learn pandas python-dotenv matplotlib joblib
-
+          
       - name: Train Model & Optimize (Optuna + MLFlow)
-        # Ejecuta el entrenamiento. MLFLOW_TRACKING_URI se lee del env global.
+          # Ejecuta el entrenamiento. MLFLOW_TRACKING_URI se lee del env global.
         run: python -m mylib.train
 
       # Guardamos los archivos generados para pasarlos a las siguientes etapas

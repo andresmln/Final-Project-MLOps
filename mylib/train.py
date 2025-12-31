@@ -126,7 +126,7 @@ def main():
         plt.title(f"Confusion Matrix (Threshold: {best_threshold:.2f})")
         plt.savefig("confusion_matrix.png")
         plt.close()
-        mlflow.log_artifact("confusion_matrix.png", name="plots")
+        mlflow.log_artifact("confusion_matrix.png", artifact_path="plots")
 
         # ---------------------------------------------------------
         # PHASE D: ARTIFACT SERIALIZATION
