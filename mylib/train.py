@@ -135,7 +135,7 @@ def main():
         mlflow.sklearn.log_model(best_model, "model")
         # 1b. Save Model as joblib
         joblib.dump(best_model, "model.joblib")
-        mlflow.log_artifact("model.joblib", name="preprocessing")
+        mlflow.log_artifact("model.joblib", artifact_path="preprocessing")
         
         # 2. Save Preprocessing Artifacts
         joblib.dump(scaler, "scaler.joblib")
@@ -143,16 +143,16 @@ def main():
         # Save the threshold explicitly so the API can use it!
         joblib.dump(best_threshold, "threshold.joblib") 
         
-        mlflow.log_artifact("scaler.joblib", name="preprocessing")
-        mlflow.log_artifact("feature_names.joblib", name="preprocessing")
-        mlflow.log_artifact("threshold.joblib", name="preprocessing")
+        mlflow.log_artifact("scaler.joblib", artifact_path="preprocessing")
+        mlflow.log_artifact("feature_names.joblib", artifact_path="preprocessing")
+        mlflow.log_artifact("threshold.joblib", artifact_path="preprocessing")
 
         # Log the Processed Data for Auditing/Debugging
         # We save it to a temp file first, then upload it to MLflow
         processed_df = X_train.copy()
         processed_df['TARGET_CHURN'] = y_train
         processed_df.to_csv("processed_data_audit.csv", index=False)
-        mlflow.log_artifact("processed_data_audit.csv", name="data_lineage")
+        mlflow.log_artifact("processed_data_audit.csv", artifact_path="data_lineage")
         # Cleanup temp file
         if os.path.exists("processed_data_audit.csv"):
             os.remove("processed_data_audit.csv")
@@ -168,7 +168,7 @@ def main():
         plt.tight_layout()
         plt.savefig("shap_summary.png", bbox_inches='tight', dpi=300)
         plt.close()
-        mlflow.log_artifact("shap_summary.png", name="plots")
+        mlflow.log_artifact("shap_summary.png", artifact_path="plots")
         
         # Cleanup
         ##for f in ["scaler.joblib", "feature_names.joblib", "threshold.joblib", "shap_summary.png", "confusion_matrix.png"]:
