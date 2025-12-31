@@ -142,7 +142,7 @@ jobs:
           # -------------------------------------------------------
           # Creamos una rama nueva sin historia para evitar subir archivos pesados antiguos (PDF, ZIP)
           git checkout --orphan deploy-branch
-          git reset --hard  # Reseteamos para dejar el staging area vacío
+          git reset  # Reseteamos para dejar el staging area vacío
 
           # -------------------------------------------------------
           # 2. CONFIGURACIÓN DEL SPACE (Docker y README)
