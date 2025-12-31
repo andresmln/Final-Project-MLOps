@@ -150,7 +150,7 @@ jobs:
 
           # 4. Añadir los artefactos descargados (modelos) al commit
           #    Como los descargamos con 'download-artifact', son archivos nuevos para git.
-          git add model.joblib scaler.joblib feature_names.joblib threshold.joblib metrics.json
+          git add -f model.joblib scaler.joblib feature_names.joblib threshold.joblib metrics.json
           
           # 5. Hacer commit y push forzado para actualizar el Space
           #    El '|| true' en commit evita fallo si no hay cambios (aunque siempre habrá por el modelo nuevo)
