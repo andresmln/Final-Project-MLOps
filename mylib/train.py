@@ -5,6 +5,7 @@ import xgboost as xgb
 import matplotlib.pyplot as plt
 import optuna
 import joblib
+import json
 import shap
 import numpy as np
 import pandas as pd
@@ -118,6 +119,17 @@ def main():
         
         final_acc = accuracy_score(y_test, y_pred_hard)
         mlflow.log_metric("production_accuracy", final_acc)
+        
+        ## METRIC.JSON PARA HUGGING FACE
+        metrics_data = {
+            "accuracy": float(final_acc),
+            "f1_score": float(max_f1)
+        }
+        
+        with open("metrics.json", "w") as f:
+            json.dump(metrics_data, f)
+            
+        print("✅ Archivo metrics.json generado correctamente en local.")
         
         # Log Confusion Matrix Plot
         cm = confusion_matrix(y_test, y_pred_hard)
