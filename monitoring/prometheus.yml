@@ -6,4 +6,4 @@ scrape_configs:
   - job_name: 'fastapi_churn_service'
     metrics_path: '/metrics'
     static_configs:
-      - targets: ['localhost:8000']  # 'churn-api' is the container name we define below
+      - targets: ['localhost:7860']  # 'churn-api' is the container name we define below

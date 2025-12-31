@@ -20,7 +20,7 @@ COPY api/models_local/ /app/models_local/
 ENV ARTIFACT_PATH="/app/models_local"
 
 # 7. Expose Port
-EXPOSE 8000
+EXPOSE 7860
 
 # 8. Run Command
-CMD ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "7860"]
