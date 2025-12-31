@@ -180,27 +180,46 @@ jobs:
           git lfs track "*.joblib"
           git add .gitattributes
 
+
           # -------------------------------------------------------
-          # 4. AÑADIR ARCHIVOS AL COMMIT
+          # 4. ORGANIZAR MODELOS (¡ESTO ES LO QUE FALTABA!)
+          # -------------------------------------------------------
+          # Tu Dockerfile busca los modelos en api/models_local, así que hay que moverlos allí
+          mkdir -p api/models_local
+
+          echo "📦 Moviendo modelos a api/models_local/..."
+          mv model.joblib api/models_local/
+          mv scaler.joblib api/models_local/
+          mv feature_names.joblib api/models_local/
+          mv threshold.joblib api/models_local/
+          
+          # Añadimos la carpeta con los modelos a Git
+          git add -f api/models_local/
+          # -------------------------------------------------------
+          # 5. AÑADIR EL RESTO DE ARCHIVOS AL COMMIT
           # -------------------------------------------------------
           
           # A) Artefactos generados (descargados del paso anterior)
-          git add -f model.joblib scaler.joblib feature_names.joblib threshold.joblib metrics.json
+          git add -f api/models_local/
 
-          # B) Archivos de Configuración y Arranque
+          # B) Añadimos metrics.json (este sí sigue en la raíz)
+          if [ -f "metrics.json" ]; then git add -f metrics.json; fi
+
+          # C) Añadimos Configuración y Código (ESTO SÍ HAY QUE HACERLO)
           git add README.md Dockerfile
           git add requirements.txt || true
           git add main.py || true
           git add Preprocessing.py || true
           
-          # C) Carpetas de código
+          # D) Carpetas de código
           if [ -d "api" ]; then git add api/; fi
           if [ -d "mylib" ]; then git add mylib/; fi
           if [ -d "templates" ]; then git add templates/; fi
           if [ -d "cli" ]; then git add cli/; fi
+          if [ -d "monitoring" ]; then git add monitoring/; fi
 
           # -------------------------------------------------------
-          # 5. ENVIAR A HUGGING FACE
+          # 6. ENVIAR A HUGGING FACE
           # -------------------------------------------------------
           git commit -m "Deploy from GitHub Actions (Docker + Metrics)"
           git push --force space deploy-branch:main
