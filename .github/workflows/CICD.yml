@@ -6,51 +6,38 @@ on:
   pull_request:
     branches: [ "main" ]
 
-# Definimos variables globales para MLFlow como pide el PDF
 env:
+  # GLOBAL VARIABLES
   MLFLOW_DIR: ${{ github.workspace }}/mlruns
   MLFLOW_TRACKING_URI: file://${{ github.workspace }}/mlruns
+  DOCKER_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/mlops-final_project:latest
 
 jobs:
   # -----------------------------------------------------------
-  # 1. ETAPA DE ENTRENAMIENTO (Train & Serialize)
+  # JOB 1: TRAIN & SERIALIZE (Optimized with uv)
   # -----------------------------------------------------------
   train:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      # 1. Install uv (Very fast, single binary)
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      # 2. Set up Python via uv
       - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+        run: uv python install 3.10
 
+      # 3. Install Dependencies & Project
       - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install wheel setuptools
-          
-          # 1. Mira si existe dentro de la carpeta api/
-          if [ -f api/requirements.txt ]; then 
-            sed -i '/pywin32/d' api/requirements.txt
-            sed -i '/winshell/d' api/requirements.txt
-            pip install -r api/requirements.txt
-          
-          # 2. O si existe en la raíz (aquí entra tu elif)
-          elif [ -f requirements.txt ]; then
-            sed -i '/pywin32/d' requirements.txt
-            sed -i '/winshell/d' requirements.txt
-            pip install -r requirements.txt
-          fi
+        run: uv sync
 
-          # 3. Instalación de seguridad por si lo anterior falla
-          pip install shap optuna xgboost mlflow scikit-learn pandas python-dotenv matplotlib joblib
-          
-      - name: Train Model & Optimize (Optuna + MLFlow)
-          # Ejecuta el entrenamiento. MLFLOW_TRACKING_URI se lee del env global.
-        run: python -m mylib.train
+      # 4. Train Model
+      - name: Train Model (Optuna + MLFlow)
+        run: uv run python -m mylib.train
 
-      # Guardamos los archivos generados para pasarlos a las siguientes etapas
+      # Save the trained model
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -64,27 +51,20 @@ jobs:
             mlruns/
 
   # -----------------------------------------------------------
-  # 2. ETAPA DE CONSTRUCCIÓN Y DESPLIEGUE (Docker)
+  # JOB 2: DEPLOY BACKEND TO RENDER
   # -----------------------------------------------------------
-  build-and-deploy:
+  deploy-backend-render:
     runs-on: ubuntu-latest
-    needs: train  # Espera a que termine el entrenamiento
-    permissions:
-      contents: read
-      packages: write
-    
+    needs: train
     steps:
       - uses: actions/checkout@v4
 
-      # DESCARGAMOS EL MODELO EN LA CARPETA ESPECIFICA PARA QUE DOCKER LO VEA 
+      # 1. Download the Trained Model from Job 1
       - name: Download Model Artifacts
         uses: actions/download-artifact@v4
         with:
           name: model-artifacts
           path: api/models_local 
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -95,40 +75,31 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # 2. Build & Push Image containing the NEW model
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: api/Dockerfile
           push: true
-          
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/mlops-final_project_churn-api:latest
+          tags: ${{ env.DOCKER_IMAGE }}
 
-      # Limpieza del directorio MLFlow (requisito académico común)
-      - name: Clean MLFlow Directory
-        run: rm -rf ${{ env.MLFLOW_DIR }}
+      # 3. Trigger Render to pull the new image
+      - name: Trigger Render Deploy
+        run: |
+          # Uses the Deploy Hook from Render Settings
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_KEY }}"
 
   # -----------------------------------------------------------
-  # 3. INTERFAZ GRÁFICA (Hugging Face Spaces)
+  # JOB 3: DEPLOY FRONTEND TO HUGGING FACE (Automated Branch)
   # -----------------------------------------------------------
-  deploy-hf:
+  deploy-frontend-hf:
     runs-on: ubuntu-latest
-    needs: build-and-deploy
+    needs: deploy-backend-render
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: main
+      - uses: actions/checkout@v4
       
-      # Descargamos los modelos frescos para subirlos a HF
-      - name: Download Model Artifacts for HF
-        uses: actions/download-artifact@v4
-        with:
-          name: model-artifacts
-          path: .
-      
-      - name: Push to Hugging Face
+      - name: Push GUI to Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_USERNAME: ${{ secrets.HF_USERNAME }}
@@ -136,90 +107,25 @@ jobs:
         run: |
           git config --global user.email "action@github.com"
           git config --global user.name "GitHub Action"
-
-          # -------------------------------------------------------
-          # 1. PREPARACIÓN DE LA RAMA LIMPIA (Orphan Branch)
-          # -------------------------------------------------------
-          # Creamos una rama nueva sin historia para evitar subir archivos pesados antiguos (PDF, ZIP)
-          git checkout --orphan deploy-branch
-          git reset  # Reseteamos para dejar el staging area vacío
-
-          # -------------------------------------------------------
-          # 2. CONFIGURACIÓN DEL SPACE (Docker y README)
-          # -------------------------------------------------------
           
-          # A) Mover Dockerfile a la raíz (Requisito de HF Spaces)
-          # Git reset borró los archivos del índice, pero siguen en el disco.
-          # Tenemos que recuperarlos del checkout original o simplemente operar con lo que hay.
-          # NOTA: Al hacer checkout --orphan y reset, los archivos siguen en el directorio de trabajo.
+          # 1. Create a fresh temporary branch (orphan = no history)
+          git checkout --orphan hf-space-deploy
           
-          if [ -f "api/Dockerfile" ]; then
-            cp api/Dockerfile .
-            echo "✅ Dockerfile movido a la raíz"
-          else
-            echo "⚠️ ADVERTENCIA: No se encontró api/Dockerfile"
-          fi
-
-          # B) Crear README.md con la metadata para Docker
-          echo "---" > README.md
-          echo "title: MLOps Telco Churn" >> README.md
-          echo "emoji: 🚀" >> README.md
-          echo "colorFrom: blue" >> README.md
-          echo "colorTo: indigo" >> README.md
-          echo "sdk: docker" >> README.md
-          echo "app_port: 7860" >> README.md
-          echo "pinned: false" >> README.md
-          echo "---" >> README.md
-
-          # -------------------------------------------------------
-          # 3. PREPARAR GIT Y LFS
-          # -------------------------------------------------------
+          # 2. Remove everything except the 'gui' folder
+          git reset
+          
+          # 3. Move 'gui' contents to root (SAFE COPY)
+          # -r ensures subfolders (like images) are copied
+          cp -r gui/* .
+          
+          # 4. Add EVERYTHING
+          # This is safer than naming specific files. 
+          # If you add 'logo.png' later, this script will catch it automatically.
+          git add .
+          
+          # 5. Commit and Push to Hugging Face
+          git commit -m "Deploy Frontend from GitHub Actions"
+          
+          # Add remote and push
           git remote add space https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME
-          
-          git lfs install
-          git lfs track "*.joblib"
-          git add .gitattributes
-
-
-          # -------------------------------------------------------
-          # 4. ORGANIZAR MODELOS (¡ESTO ES LO QUE FALTABA!)
-          # -------------------------------------------------------
-          # Tu Dockerfile busca los modelos en api/models_local, así que hay que moverlos allí
-          mkdir -p api/models_local
-
-          echo "📦 Moviendo modelos a api/models_local/..."
-          mv model.joblib api/models_local/
-          mv scaler.joblib api/models_local/
-          mv feature_names.joblib api/models_local/
-          mv threshold.joblib api/models_local/
-          
-          # Añadimos la carpeta con los modelos a Git
-          git add -f api/models_local/
-          # -------------------------------------------------------
-          # 5. AÑADIR EL RESTO DE ARCHIVOS AL COMMIT
-          # -------------------------------------------------------
-          
-          # A) Artefactos generados (descargados del paso anterior)
-          git add -f api/models_local/
-
-          # B) Añadimos metrics.json (este sí sigue en la raíz)
-          if [ -f "metrics.json" ]; then git add -f metrics.json; fi
-
-          # C) Añadimos Configuración y Código (ESTO SÍ HAY QUE HACERLO)
-          git add README.md Dockerfile
-          git add requirements.txt || true
-          git add main.py || true
-          git add Preprocessing.py || true
-          
-          # D) Carpetas de código
-          if [ -d "api" ]; then git add api/; fi
-          if [ -d "mylib" ]; then git add mylib/; fi
-          if [ -d "templates" ]; then git add templates/; fi
-          if [ -d "cli" ]; then git add cli/; fi
-          if [ -d "monitoring" ]; then git add monitoring/; fi
-
-          # -------------------------------------------------------
-          # 6. ENVIAR A HUGGING FACE
-          # -------------------------------------------------------
-          git commit -m "Deploy from GitHub Actions (Docker + Metrics)"
-          git push --force space deploy-branch:main
+          git push --force space hf-space-deploy:main

@@ -1,9 +1,10 @@
-# prometheus.yml
 global:
-  scrape_interval: 5s  # Scrape every 5 seconds (fast for demo purposes)
+  scrape_interval: 15s 
 
 scrape_configs:
-  - job_name: 'fastapi_churn_service'
+  - job_name: 'churn-api-render'
     metrics_path: '/metrics'
+    scheme: https 
     static_configs:
-      - targets: ['localhost:7860']  # 'churn-api' is the container name we define below
+      # Replace this with your render url
+      - targets: ['mlops-final-project.onrender.com:443']
