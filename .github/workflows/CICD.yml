@@ -10,7 +10,7 @@ env:
   # GLOBAL VARIABLES
   MLFLOW_DIR: ${{ github.workspace }}/mlruns
   MLFLOW_TRACKING_URI: file://${{ github.workspace }}/mlruns
-  DOCKER_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/mlops-final_project:latest
+  DOCKER_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/mlops_final_project:latest
 
 jobs:
   # -----------------------------------------------------------

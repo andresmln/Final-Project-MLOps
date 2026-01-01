@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir .
 
 # 4. Copy API Code
-COPY api/ api/
+COPY api/ .
 
 # 5. Copy Artifacts ('download-artifact' action)
 COPY api/models_local/ /app/models_local/
