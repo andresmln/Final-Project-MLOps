@@ -13,10 +13,38 @@ env:
   DOCKER_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/mlops_final_project:latest
 
 jobs:
+  # ----------------------------------------------------------- 
+  # JOB 0: CHECK WHICH FILES HAVE CHANGED
   # -----------------------------------------------------------
-  # JOB 1: TRAIN & SERIALIZE (Optimized with uv)
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      # We define two flags: 'train' and 'backend'
+      train: ${{ steps.filter.outputs.train }}
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dorny/paths-filter@v3
+      id: filter
+      with:
+        filters: |
+          train:
+            - 'mylib/**'
+            - 'data/**'
+            - 'Projecto MLOps.ipynb'
+            - 'requirements.txt'
+          backend:
+            - 'api/**'
+            - 'api/Dockerfile'
+          frontend:
+            - 'gui/**''
+  # -----------------------------------------------------------
+  # JOB 1: TRAIN & SERIALIZE
   # -----------------------------------------------------------
   train:
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.train == 'true' || startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,17 +82,33 @@ jobs:
   # JOB 2: DEPLOY BACKEND TO RENDER
   # -----------------------------------------------------------
   deploy-backend-render:
+    needs: [check-changes, train]
+    if: |
+      always() && 
+      (needs.check-changes.outputs.backend == 'true' || needs.check-changes.outputs.train == 'true' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
-    needs: train
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Download the Trained Model from Job 1
-      - name: Download Model Artifacts
+
+      # 1. If training was run, download the new model
+      - name: Download NEW Model
+        if: needs.train.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: model-artifacts
           path: api/models_local 
+
+      # 1 (alt)  If training was skipped, download the old model from history
+      - name: Download OLD Model (Fallback)
+        if: needs.train.result == 'skipped'
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: CICD.yml
+          workflow_conclusion: success   # Must be from a green run
+          name: model-artifacts
+          path: api/models_local
+          if_no_artifact_found: fail
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -89,13 +133,14 @@ jobs:
         run: |
           # Uses the Deploy Hook from Render Settings
           curl -X POST "https://api.render.com/deploy/srv-d5bf210gjchc73c0b530?key=${{ secrets.RENDER_DEPLOY_HOOK_KEY }}"
-          
+
   # -----------------------------------------------------------
-  # JOB 3: DEPLOY FRONTEND TO HUGGING FACE (Automated Branch)
+  # JOB 3: DEPLOY FRONTEND TO HUGGING FACE (Automated Temporar Branch)
   # -----------------------------------------------------------
   deploy-frontend-hf:
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.frontend == 'true' || startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
-    needs: deploy-backend-render
     steps:
       - uses: actions/checkout@v4
       
@@ -108,22 +153,24 @@ jobs:
           git config --global user.email "action@github.com"
           git config --global user.name "GitHub Action"
           
-          # 1. Create a fresh temporary branch (orphan = no history)
+          # 1. Switch to a fresh orphan branch
           git checkout --orphan hf-space-deploy
           
-          # 2. Remove everything except the 'gui' folder
+          # 2. Unstage all files (so they become "untracked")
           git reset
           
-          # 3. Move 'gui' contents to root (SAFE COPY)
-          # -r ensures subfolders (like images) are copied
-          cp -r gui/* .
+          # 3. Delete everything except the 'gui' folder and .git
+          # -f: force, -d: directories, -x: ignored files, -e: exclude 'gui'
+          git clean -fdx -e gui
           
-          # 4. Add EVERYTHING
-          # This is safer than naming specific files. 
-          # If you add 'logo.png' later, this script will catch it automatically.
+          # 4. Move the contents of 'gui' to the root
+          mv gui/* .
+          #  Remove the now empty gui folder
+          rm -rf gui
+          
+          # 5. 'git add .' adds the app files
           git add .
           
-          # 5. Commit and Push to Hugging Face
           git commit -m "Deploy Frontend from GitHub Actions"
           
           # Add remote and push
