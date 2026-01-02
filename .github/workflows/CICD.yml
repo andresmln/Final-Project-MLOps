@@ -88,8 +88,8 @@ jobs:
       - name: Trigger Render Deploy
         run: |
           # Uses the Deploy Hook from Render Settings
-          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_KEY }}"
-
+          curl -X POST "https://api.render.com/deploy/srv-d5bf210gjchc73c0b530?key=${{ secrets.RENDER_DEPLOY_HOOK_KEY }}"
+          
   # -----------------------------------------------------------
   # JOB 3: DEPLOY FRONTEND TO HUGGING FACE (Automated Branch)
   # -----------------------------------------------------------
