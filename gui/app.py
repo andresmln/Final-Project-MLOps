@@ -7,7 +7,7 @@ st.set_page_config(page_title="Telco Churn Predictor", page_icon="🔮", layout=
 
 # --- API SETUP ---
 # For now, it defaults to a placeholder. You will update this Env Var in Hugging Face.
-API_URL = os.getenv("API_URL", "https://mlops-final-project-p939.onrender.com")
+API_URL = os.getenv("API_URL", "https://mlops-final-project-p939.onrender.com/predict")
 
 # --- HEADER ---
 st.title("🔮 Telco Customer Churn Prediction")
