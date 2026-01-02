@@ -6,9 +6,8 @@ import os
 st.set_page_config(page_title="Telco Churn Predictor", page_icon="🔮", layout="centered")
 
 # --- API SETUP ---
-# CRITICAL: This URL must point to your Render instance (once deployed)
 # For now, it defaults to a placeholder. You will update this Env Var in Hugging Face.
-API_URL = os.getenv("API_URL", "https://your-render-service-name.onrender.com/predict")
+API_URL = os.getenv("API_URL", "https://mlops-final-project-p939.onrender.com")
 
 # --- HEADER ---
 st.title("🔮 Telco Customer Churn Prediction")
