@@ -79,6 +79,7 @@ class CustomerData(BaseModel):
 # ==========================================
 artifacts = {
     "model": None,
+    "shadow_model": None,
     "scaler": None,
     "feature_names": None,
     "threshold": 0.5
@@ -90,6 +91,7 @@ def load_artifacts():
         print(f"📂 Loading artifacts from: {base_path}")
         
         artifacts["model"] = joblib.load(os.path.join(base_path, "model.joblib"))
+        artifacts["shadow_model"] = joblib.load(os.path.join(base_path, "shadow_model.joblib"))
         artifacts["scaler"] = joblib.load(os.path.join(base_path, "scaler.joblib"))
         artifacts["feature_names"] = joblib.load(os.path.join(base_path, "feature_names.joblib"))
         artifacts["threshold"] = joblib.load(os.path.join(base_path, "threshold.joblib"))
@@ -184,6 +186,9 @@ def predict(customer: CustomerData):
         PREDICTION_COUNTER.inc()
         
         input_df = preprocess_input(customer.dict())
+
+        run_shadow_inference(input_df)
+
         prob = artifacts["model"].predict_proba(input_df)[:, 1][0]
         prediction = 1 if prob >= artifacts["threshold"] else 0
         

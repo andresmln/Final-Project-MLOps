@@ -63,7 +63,9 @@ jobs:
 
       # 4. Train Model
       - name: Train Model (Optuna + MLFlow)
-        run: uv run python -m mylib.train
+        run: |
+          uv run python -m mylib.train
+          uv run python -m mylib.train_shadow
 
       # Save the trained model
       - name: Upload Artifacts
@@ -72,6 +74,7 @@ jobs:
           name: model-artifacts
           path: |
             model.joblib
+            shadow_model.joblib
             scaler.joblib
             feature_names.joblib
             threshold.joblib
