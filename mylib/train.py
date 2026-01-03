@@ -186,7 +186,6 @@ def main():
         ##for f in ["scaler.joblib", "feature_names.joblib", "threshold.joblib", "shap_summary.png", "confusion_matrix.png"]:
           #  if os.path.exists(f):
            #     os.remove(f)
-        # Estas si que se pueden borrar
         for f in ["shap_summary.png", "confusion_matrix.png", "processed_data_audit.csv"]:
             if os.path.exists(f):
                 os.remove(f)

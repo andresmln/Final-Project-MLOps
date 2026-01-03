@@ -133,8 +133,27 @@ def preprocess_input(data: dict) -> pd.DataFrame:
     
     return df
 
+
 # ==========================================
-# 4. ENDPOINTS
+# 4. SHADOW DEPLOYMENT LOGIC
+# ==========================================
+def run_shadow_inference(input_df: pd.DataFrame):
+    """
+    Runs TabNet in the background. logs result but does NOT return it to user.
+    """
+    if artifacts["shadow_model"]:
+        try:
+            # TabNet expects numpy array
+            shadow_prob = artifacts["shadow_model"].predict_proba(input_df.values)[:, 1][0]
+            print(f"👻 [SHADOW MODE] TabNet Prediction: {shadow_prob:.4f}")
+            # In real life, you would save this to a database to compare later
+        except Exception as e:
+            print(f"⚠️ Shadow inference failed: {e}")
+
+
+
+# ==========================================
+# 5. ENDPOINTS
 # ==========================================
 
 @app.on_event("startup")

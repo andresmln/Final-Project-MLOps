@@ -1,26 +1,31 @@
-version: "3.8"
+version: '3.8'
 
 services:
-  # -------------------------------------------------------------
-  # 'churn-api' runs now on Render.
-  # We use this file ONLY to run the monitoring tools locally
-  # -------------------------------------------------------------
-
+  # -----------------------------------------------------------------
+  # PROMETHEUS
+  # -----------------------------------------------------------------
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus
     container_name: prometheus
-    ports:
-      - "9090:9090"  # Access at http://localhost:9090
+    network_mode: "host"       # <--- As requested
+    user: root                 # <--- THE FIX: Bypasses the "permission denied" error
     volumes:
-      # Mount your local config file into the container
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    # NOTE: No "ports:" section allowed when using network_mode: "host"
 
+  # -----------------------------------------------------------------
+  # GRAFANA
+  # -----------------------------------------------------------------
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana
     container_name: grafana
-    ports:
-      - "3000:3000"  # Access at http://localhost:3000
+    network_mode: "host"       # <--- As requested
+    user: root                 # <--- Added for safety to avoid similar permission issues
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     depends_on:
       - prometheus
+    volumes:
+      - ./datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
