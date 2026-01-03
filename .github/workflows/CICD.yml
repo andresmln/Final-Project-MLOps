@@ -30,10 +30,11 @@ jobs:
       with:
         filters: |
           train:
-            - 'mylib/**'
+            - 'mylib/train.py'
+            - 'mylib/train_shadow.py'
+            - 'mylib/data_preprocess.py'
             - 'data/**'
-            - 'Projecto MLOps.ipynb'
-            - 'requirements.txt'
+            - 'api/requirements.txt'
           backend:
             - 'api/**'
             - 'api/Dockerfile'
