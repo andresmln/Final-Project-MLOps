@@ -62,13 +62,23 @@ jobs:
       - name: Install Dependencies
         run: uv sync
 
-      # 4. Train Model
-      - name: Train Model (Optuna + MLFlow)
+      # 4. Run Unit Tests
+      - name: Run Unit Tests
         run: |
-          uv run python -m mylib.train
-          uv run python -m mylib.train_shadow
+          echo "🧪 Running Unit Tests..."
+          pytest tests/test_data_preprocess.py
 
-      # Save the trained model
+      # 5. Train Models
+      - name: Train Models (Optuna + MLFlow)
+        run: uv run python -m mylib.train_pipeline
+
+      # 7. Run Integration Tests
+      - name: Run Integration Tests
+        run: |
+          echo "🤖 Verifying Artifacts and API..."
+          pytest tests/test_model_artifacts.py tests/test_api.py
+
+      # 7. Save the trained model
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -81,6 +91,7 @@ jobs:
             threshold.joblib
             metrics.json
             mlruns/
+      
 
   # -----------------------------------------------------------
   # JOB 2: DEPLOY BACKEND TO RENDER

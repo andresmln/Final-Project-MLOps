@@ -3,6 +3,7 @@ import joblib
 import pandas as pd
 import uvicorn
 from fastapi import FastAPI, HTTPException, Response
+from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from prometheus_client import generate_latest
 from enum import Enum
@@ -13,8 +14,6 @@ from api.monitoring import (
     CHURN_PROBABILITY_GAUGE, 
     simulate_drift
 )
-
-app = FastAPI(title="Telco Churn Prediction API with Monitoring")
 
 # ==========================================
 # 1. DATA MODELS & ENUMS
@@ -87,7 +86,16 @@ artifacts = {
 
 def load_artifacts():
     try:
-        base_path = os.getenv("ARTIFACT_PATH", ".")
+        # 1. Get the directory where this script (main.py) is actually located
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # 2. Construct the absolute path to the 'models_local' folder inside 'api'
+        # This ensures it works whether you run 'pytest' from root or 'uvicorn' from api/
+        default_path = os.path.join(current_dir, "models_local")
+
+        # 3. Use Environment Variable if set (for Docker), otherwise use the path we just built
+        base_path = os.getenv("ARTIFACT_PATH", default_path)
+        
         print(f"📂 Loading artifacts from: {base_path}")
         
         artifacts["model"] = joblib.load(os.path.join(base_path, "model.joblib"))
@@ -99,6 +107,21 @@ def load_artifacts():
         print("✅ Artifacts loaded successfully.")
     except Exception as e:
         print(f"❌ Error loading artifacts: {e}")
+        # Optional: Print current working directory to help debug
+        print(f"PWD: {os.getcwd()}")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    The new standard way to handle startup/shutdown in FastAPI.
+    """
+    # STARTUP: Load models
+    load_artifacts()
+    yield
+    # SHUTDOWN: Clean up
+    artifacts.clear()
+
+app = FastAPI(title="Telco Churn Prediction API", lifespan=lifespan)
 
 # ==========================================
 # 3. PREPROCESSING
@@ -185,7 +208,7 @@ def predict(customer: CustomerData):
         # Increment Counter
         PREDICTION_COUNTER.inc()
         
-        input_df = preprocess_input(customer.dict())
+        input_df = preprocess_input(customer.model_dump())
 
         run_shadow_inference(input_df)
 
