@@ -33,7 +33,7 @@ jobs:
             - 'mylib/train.py'
             - 'mylib/train_shadow.py'
             - 'mylib/data_preprocess.py'
-            - 'data/**'
+            - 'archive/**'
             - 'api/requirements.txt'
           backend:
             - 'api/**'
@@ -64,19 +64,15 @@ jobs:
 
       # 4. Run Unit Tests
       - name: Run Unit Tests
-        run: |
-          echo "🧪 Running Unit Tests..."
-          pytest tests/test_data_preprocess.py
+        run: uv run pytest tests/test_data_preprocess.py
 
       # 5. Train Models
       - name: Train Models (Optuna + MLFlow)
         run: uv run python -m mylib.train_pipeline
 
-      # 7. Run Integration Tests
+      # 6. Run Integration Tests
       - name: Run Integration Tests
-        run: |
-          echo "🤖 Verifying Artifacts and API..."
-          pytest tests/test_model_artifacts.py tests/test_api.py
+        run: uv run pytest tests/test_model_artifacts.py tests/test_api.py
 
       # 7. Save the trained model
       - name: Upload Artifacts
