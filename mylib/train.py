@@ -9,6 +9,7 @@ import json
 import shap
 import numpy as np
 import pandas as pd
+import time
 from dotenv import load_dotenv
 from sklearn.metrics import (
     average_precision_score, 
@@ -21,12 +22,16 @@ from mylib.data_preprocess import get_processed_data
 
 load_dotenv()
 
+
+
 # Configuración
 TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "mlruns")
-EXPERIMENT_NAME = os.getenv("MLFLOW_EXPERIMENT_NAME", "Telco_Churn_Project")
+EXPERIMENT_NAME = os.getenv("MLFLOW_EXPERIMENT_NAME", "Telco_Churn_Model")
 DATA_PATH = os.getenv("DATA_PATH", "archive/WA_Fn-UseC_-Telco-Customer-Churn.csv")
+OUTPUT_DIR = "api/models_local"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-def objective(trial, X_train, X_test, y_train, y_test):
+def objective(trial, X_train, X_val, y_train, y_val):
     """
     METRIC 1: Threshold INDEPENDENT (PR-AUC)
     Used purely to find the best Hyperparameters.
@@ -48,11 +53,11 @@ def objective(trial, X_train, X_test, y_train, y_test):
         model.fit(X_train, y_train)
         
         # Predict Probabilities (Not Classes)
-        y_proba = model.predict_proba(X_test)[:, 1]
+        y_proba = model.predict_proba(X_val)[:, 1]
         
         # Optimize based on PR-AUC (Average Precision)
         # This metric doesn't care about thresholds (0.5 vs 0.3), only ranking quality.
-        score = average_precision_score(y_test, y_proba)
+        score = average_precision_score(y_val, y_proba)
         
         mlflow.log_params(params)
         mlflow.log_metric("pr_auc_optimization", score)
@@ -80,16 +85,16 @@ def main():
     mlflow.set_experiment(EXPERIMENT_NAME)
     
     # 1. Load Data
-    X_train, X_test, y_train, y_test, scaler, feature_names = get_processed_data(DATA_PATH)
+    X_train, X_val, X_test, y_train, y_val, y_test, scaler, feature_names = get_processed_data(DATA_PATH)
     
-    with mlflow.start_run(run_name="Final_Pipeline_Run") as run:
+    with mlflow.start_run(run_name="Production_Candidate_Run") as run:
         
         # ---------------------------------------------------------
         # PHASE A: HYPERPARAMETER OPTIMIZATION (Threshold Independent)
         # ---------------------------------------------------------
         print("🔍 Optimizing Hyperparameters...")
         study = optuna.create_study(direction="maximize")
-        study.optimize(lambda trial: objective(trial, X_train, X_test, y_train, y_test), n_trials=20)
+        study.optimize(lambda trial: objective(trial, X_train, X_val, y_train, y_val), n_trials=20)
         
         print("🏆 Best Params:", study.best_params)
         mlflow.log_params(study.best_params)
@@ -99,13 +104,24 @@ def main():
         # ---------------------------------------------------------
         print("⚙️ Training Final Model...")
         best_model = xgb.XGBClassifier(**study.best_params, use_label_encoder=False)
+
+        # START TIMER
+        train_start = time.time()
+
         best_model.fit(X_train, y_train)
+
+        # STOP TIMER
+        train_end = time.time()
+        training_time = train_end - train_start
         
-        # Get probabilities for Test set
-        y_proba_test = best_model.predict_proba(X_test)[:, 1]
+        print(f"⏱️ Training Time: {training_time:.4f} seconds")
+        mlflow.log_metric("training_time_seconds", training_time)
+        
+        # Get probabilities for Val set
+        y_proba_val = best_model.predict_proba(X_val)[:, 1]
         
         # Calculate optimal threshold
-        best_threshold, max_f1 = find_best_threshold(y_test, y_proba_test)
+        best_threshold, max_f1 = find_best_threshold(y_val, y_proba_val)
         
         print(f"🎯 Optimal Threshold found: {best_threshold:.4f} (Max F1: {max_f1:.4f})")
         mlflow.log_param("optimal_threshold", best_threshold)
@@ -115,24 +131,27 @@ def main():
         # PHASE C: LOGGING PRODUCTION METRICS
         # ---------------------------------------------------------
         # Apply the threshold to generate hard classes (0 or 1)
-        y_pred_hard = (y_proba_test >= best_threshold).astype(int)
+        y_pred_hard = (y_proba_val >= best_threshold).astype(int)
         
-        final_acc = accuracy_score(y_test, y_pred_hard)
+        final_acc = accuracy_score(y_val, y_pred_hard)
         mlflow.log_metric("production_accuracy", final_acc)
         
         ## METRIC.JSON PARA HUGGING FACE
         metrics_data = {
             "accuracy": float(final_acc),
-            "f1_score": float(max_f1)
+            "f1_score": float(max_f1),
+            "training_time_sec": float(training_time)
         }
         
-        with open("metrics.json", "w") as f:
+        # Save directly to api/models_local
+        metrics_path = os.path.join(OUTPUT_DIR, "metrics.json") # <--- CHANGED PATH
+        with open(metrics_path, "w") as f:
             json.dump(metrics_data, f)
             
-        print("✅ Archivo metrics.json generado correctamente en local.")
-        
+        print(f"✅ metrics.json saved to {metrics_path}")      
+          
         # Log Confusion Matrix Plot
-        cm = confusion_matrix(y_test, y_pred_hard)
+        cm = confusion_matrix(y_val, y_pred_hard)
         disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["No Churn", "Churn"])
         disp.plot(cmap="Blues")
         plt.title(f"Confusion Matrix (Threshold: {best_threshold:.2f})")
@@ -146,19 +165,18 @@ def main():
         # 1. Save Model
         mlflow.sklearn.log_model(best_model, "model")
         # 1b. Save Model as joblib
-        joblib.dump(best_model, "model.joblib")
-        mlflow.log_artifact("model.joblib", artifact_path="preprocessing")
+        joblib.dump(best_model, os.path.join(OUTPUT_DIR, "model.joblib"))
+        mlflow.log_artifact(os.path.join(OUTPUT_DIR, "model.joblib"), artifact_path="preprocessing")
         
         # 2. Save Preprocessing Artifacts
-        joblib.dump(scaler, "scaler.joblib")
-        joblib.dump(feature_names, "feature_names.joblib")
-        # Save the threshold explicitly so the API can use it!
-        joblib.dump(best_threshold, "threshold.joblib") 
+        joblib.dump(scaler, os.path.join(OUTPUT_DIR, "scaler.joblib"))
+        joblib.dump(feature_names, os.path.join(OUTPUT_DIR, "feature_names.joblib"))
+        joblib.dump(best_threshold, os.path.join(OUTPUT_DIR, "threshold.joblib"))
         
-        mlflow.log_artifact("scaler.joblib", artifact_path="preprocessing")
-        mlflow.log_artifact("feature_names.joblib", artifact_path="preprocessing")
-        mlflow.log_artifact("threshold.joblib", artifact_path="preprocessing")
-
+        mlflow.log_artifact(os.path.join(OUTPUT_DIR, "scaler.joblib"), artifact_path="preprocessing")
+        mlflow.log_artifact(os.path.join(OUTPUT_DIR, "feature_names.joblib"), artifact_path="preprocessing")
+        mlflow.log_artifact(os.path.join(OUTPUT_DIR, "threshold.joblib"), artifact_path="preprocessing")
+        
         # Log the Processed Data for Auditing/Debugging
         # We save it to a temp file first, then upload it to MLflow
         processed_df = X_train.copy()
@@ -172,10 +190,10 @@ def main():
         # 3. Global Interpretability (SHAP)
         print("📊 Generating SHAP plot...")
         explainer = shap.TreeExplainer(best_model)
-        shap_values = explainer.shap_values(X_test)
+        shap_values = explainer.shap_values(X_val)
         
         plt.figure(figsize=(10, 8))
-        shap.summary_plot(shap_values, X_test, max_display=12, show=False, plot_type="dot")
+        shap.summary_plot(shap_values, X_val, max_display=12, show=False, plot_type="dot")
         plt.title("SHAP Feature Importance")
         plt.tight_layout()
         plt.savefig("shap_summary.png", bbox_inches='tight', dpi=300)

@@ -7,6 +7,7 @@ import joblib
 import json
 import numpy as np
 import pandas as pd
+import time
 from pytorch_tabnet.tab_model import TabNetClassifier
 from dotenv import load_dotenv
 from sklearn.metrics import average_precision_score, accuracy_score, roc_auc_score
@@ -18,8 +19,9 @@ load_dotenv()
 TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "mlruns")
 EXPERIMENT_NAME = "Telco_Churn_Shadow_Model" # Separate experiment for clarity
 DATA_PATH = os.getenv("DATA_PATH", "archive/WA_Fn-UseC_-Telco-Customer-Churn.csv")
+OUTPUT_DIR = "api/models_local"
 
-def objective(trial, X_train, X_test, y_train, y_test):
+def objective(trial, X_train, X_val, y_train, y_val):
     """
     Optuna Objective for TabNet.
     Optimizes architecture (n_d, n_a) and training (lr, gamma).
@@ -48,7 +50,7 @@ def objective(trial, X_train, X_test, y_train, y_test):
         # TabNet expects NumPy arrays
         model.fit(
             X_train=X_train.values, y_train=y_train.values,
-            eval_set=[(X_train.values, y_train.values), (X_test.values, y_test.values)],
+            eval_set=[(X_train.values, y_train.values), (X_val.values, y_val.values)],
             eval_name=['train', 'valid'],
             eval_metric=['auc'],
             max_epochs=20, # Low epochs for faster tuning
@@ -60,8 +62,8 @@ def objective(trial, X_train, X_test, y_train, y_test):
         )
         
         # Evaluate
-        preds_prob = model.predict_proba(X_test.values)[:, 1]
-        score = average_precision_score(y_test, preds_prob)
+        preds_prob = model.predict_proba(X_val.values)[:, 1]
+        score = average_precision_score(y_val, preds_prob)
         
         mlflow.log_params(params)
         mlflow.log_metric("pr_auc_optimization", score)
@@ -74,7 +76,7 @@ def main():
     
     # 1. Load Data (Reusing your central logic)
     print("📥 Loading and Processing Data...")
-    X_train, X_test, y_train, y_test, scaler, feature_names = get_processed_data(DATA_PATH)
+    X_train, X_val, X_test, y_train, y_val, y_test, scaler, feature_names = get_processed_data(DATA_PATH)
     
     with mlflow.start_run(run_name="Shadow_Model_Pipeline") as run:
         
@@ -83,7 +85,7 @@ def main():
         # ---------------------------------------------------------
         print("🔍 Optimizing TabNet Hyperparameters...")
         study = optuna.create_study(direction="maximize")
-        study.optimize(lambda trial: objective(trial, X_train, X_test, y_train, y_test), n_trials=10)
+        study.optimize(lambda trial: objective(trial, X_train, X_val, y_train, y_val), n_trials=10)
         
         print("🏆 Best Params:", study.best_params)
         mlflow.log_params(study.best_params)
@@ -108,10 +110,13 @@ def main():
         }
         
         clf_tabnet = TabNetClassifier(**best_params)
+
+        # START TIMER
+        train_start = time.time()
         
         clf_tabnet.fit(
             X_train=X_train.values, y_train=y_train.values,
-            eval_set=[(X_train.values, y_train.values), (X_test.values, y_test.values)],
+            eval_set=[(X_train.values, y_train.values), (X_val.values, y_val.values)],
             eval_name=['train', 'valid'],
             eval_metric=['auc'],
             max_epochs=50, 
@@ -122,13 +127,32 @@ def main():
             drop_last=False
         )
 
+        # STOP TIMER
+        train_end = time.time()
+        training_time = train_end - train_start
+
+        print(f"⏱️ Training Time: {training_time:.4f} seconds")
+        mlflow.log_metric("training_time_seconds", training_time)
+
         # ---------------------------------------------------------
         # PHASE C: EVALUATION & LOGGING
         # ---------------------------------------------------------
-        preds_prob = clf_tabnet.predict_proba(X_test.values)[:, 1]
-        auc = roc_auc_score(y_test, preds_prob)
+        preds_prob = clf_tabnet.predict_proba(X_val.values)[:, 1]
+        auc = roc_auc_score(y_val, preds_prob)
         print(f"📊 Shadow Model AUC: {auc:.4f}")
         mlflow.log_metric("auc", auc)
+
+        metrics_data = {
+            "auc": float(auc),
+            "training_time_sec": float(training_time)
+        }
+        
+        # Save to api/models_local/shadow_metrics.json
+        metrics_path = os.path.join(OUTPUT_DIR, "shadow_metrics.json")
+        with open(metrics_path, "w") as f:
+            json.dump(metrics_data, f)
+            
+        print(f"✅ shadow_metrics.json saved to {metrics_path}")
 
         # ---------------------------------------------------------
         # PHASE D: ARTIFACT SERIALIZATION
@@ -139,8 +163,8 @@ def main():
         # We DO NOT save scaler/feature_names here to avoid overwriting the Main Model's files.
         # The Shadow Model piggybacks off the Main Model's preprocessing in the API.
         
-        joblib.dump(clf_tabnet, "shadow_model.joblib")
-        mlflow.log_artifact("shadow_model.joblib", artifact_path="shadow_model")
+        joblib.dump(clf_tabnet, os.path.join(OUTPUT_DIR, "shadow_model.joblib"))
+        mlflow.log_artifact(os.path.join(OUTPUT_DIR, "shadow_model.joblib"), artifact_path="shadow_model")
         
         print("✅ shadow_model.joblib saved successfully.")
         print("✅ Full Shadow Pipeline Completed.")

@@ -39,8 +39,7 @@ def encode_data(df):
 
     df['SeniorCitizen'] = pd.to_numeric(df['SeniorCitizen'], errors='coerce').fillna(0).astype(int)
     
-    # 1. Manual Binary Mapping (Safe & Explicit)
-    # Mapping these specifically guarantees 0/1 integers
+    # 1. Manual Binary Mapping
     binary_mapping = {'Yes': 1, 'No': 0, 'True': 1, 'False': 0, 'Female': 1, 'Male': 0}
     binary_cols = ['Partner', 'Dependents', 'PhoneService', 'PaperlessBilling', 'Churn', 'gender']
     
@@ -48,41 +47,50 @@ def encode_data(df):
         if col in df.columns:
             df[col] = df[col].map(binary_mapping).fillna(0).astype(int)
 
-    # 2. One-Hot Encoding (Get Dummies)
-    # drop_first=True prevents multicollinearity (Dummy Variable Trap)
-    # dtype=int ensures we get 0/1 instead of True/False
+    # 2. One-Hot Encoding
     df = pd.get_dummies(df, drop_first=True, dtype=int)
         
     return df
 
-def get_processed_data(filepath, target_col='Churn', test_size=0.2, seed=42):
-    # 1. Load
+def get_processed_data(filepath, target_col='Churn', test_size=0.2, val_size=0.2, seed=42):
+    """
+    Returns: X_train, X_val, X_test, y_train, y_val, y_test, scaler, feature_names
+    """
+    # 1. Load & Clean
     df = load_data(filepath)
-    
-    # 2. Clean
     df = clean_data(df)
-    
-    # 3. Encode (One-Hot)
     df = encode_data(df)
     
-    # 4. Split X/y
+    # 2. Split X/y
     X = df.drop(target_col, axis=1)
     y = df[target_col]
     
-    # 5. Train/Test Split
-    X_train, X_test, y_train, y_test = train_test_split(
+    # 3. First Split: Separate out the FINAL Test Set (e.g. 20%)
+    X_temp, X_test, y_temp, y_test = train_test_split(
         X, y, test_size=test_size, random_state=seed, stratify=y
     )
     
-    # 6. Scale Numerical Cols
+    # 4. Second Split: Separate Train and Validation from the remaining data
+    # We want Val to be 20% of the TOTAL original data.
+    # The 'temp' data is 80% of the total.
+    # So we need 0.2 / 0.8 = 0.25 (25%) of the temp data.
+    relative_val_size = val_size / (1 - test_size)
+    
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_temp, y_temp, test_size=relative_val_size, random_state=seed, stratify=y_temp
+    )
+    
+    # 5. Scale Numerical Cols (Fit on Train ONLY)
     numeric_cols = ['tenure', 'MonthlyCharges', 'TotalCharges']
     scaler = StandardScaler()
     
     X_train[numeric_cols] = scaler.fit_transform(X_train[numeric_cols])
-    X_test[numeric_cols] = scaler.transform(X_test[numeric_cols])
+    X_val[numeric_cols] = scaler.transform(X_val[numeric_cols])    # Transform Val
+    X_test[numeric_cols] = scaler.transform(X_test[numeric_cols])  # Transform Test
     
-    # 7. Capture the final column structure
-    # We need this list to align future data (inference) to this exact shape
+    # 6. Capture feature names
     feature_names = X_train.columns.tolist()
     
-    return X_train, X_test, y_train, y_test, scaler, feature_names
+    print(f"✅ Data Processed: Train {X_train.shape}, Val {X_val.shape}, Test {X_test.shape}")
+    
+    return X_train, X_val, X_test, y_train, y_val, y_test, scaler, feature_names
