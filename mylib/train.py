@@ -136,7 +136,7 @@ def main():
         final_acc = accuracy_score(y_val, y_pred_hard)
         mlflow.log_metric("production_accuracy", final_acc)
         
-        ## METRIC.JSON PARA HUGGING FACE
+        ## METRIC.JSON PARA HUGGING FACE 
         metrics_data = {
             "accuracy": float(final_acc),
             "f1_score": float(max_f1),
@@ -149,7 +149,7 @@ def main():
             json.dump(metrics_data, f)
             
         print(f"✅ metrics.json saved to {metrics_path}")      
-          
+
         # Log Confusion Matrix Plot
         cm = confusion_matrix(y_val, y_pred_hard)
         disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["No Churn", "Churn"])
