@@ -7,13 +7,14 @@ services:
   prometheus:
     image: prom/prometheus
     container_name: prometheus
-    network_mode: "host"       # <--- As requested
-    user: root                 # <--- THE FIX: Bypasses the "permission denied" error
+    network_mode: "host"
+    user: root
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
-    # NOTE: No "ports:" section allowed when using network_mode: "host"
+      - '--storage.tsdb.retention.time=7d'
 
   # -----------------------------------------------------------------
   # GRAFANA
@@ -21,11 +22,18 @@ services:
   grafana:
     image: grafana/grafana
     container_name: grafana
-    network_mode: "host"       # <--- As requested
-    user: root                 # <--- Added for safety to avoid similar permission issues
+    network_mode: "host"
+    user: root
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     depends_on:
       - prometheus
     volumes:
-      - ./datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
+      - grafana_data:/var/lib/grafana
+
+# -----------------------------------------------------------------
+# PERSISTENT VOLUMES (The "Hard Drives")
+# -----------------------------------------------------------------
+volumes:
+  grafana_data:
+  prometheus_data:

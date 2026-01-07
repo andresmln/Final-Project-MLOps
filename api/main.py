@@ -12,6 +12,7 @@ from enum import Enum
 from api.monitoring import (
     PREDICTION_COUNTER, 
     CHURN_PROBABILITY_GAUGE, 
+    PREDICTION_LATENCY,
     simulate_drift
 )
 
@@ -196,7 +197,6 @@ def metrics():
     1. Runs the drift simulation logic.
     2. Returns all metrics in plain text format.
     """
-    simulate_drift()
     return Response(generate_latest(), media_type="text/plain")
 
 @app.post("/predict")
@@ -205,24 +205,30 @@ def predict(customer: CustomerData):
         raise HTTPException(status_code=500, detail="Model not loaded.")
     
     try:
-        # Increment Counter
-        PREDICTION_COUNTER.inc()
-        
-        input_df = preprocess_input(customer.model_dump())
+        # 1. Start the Timer (Measures Latency)
+        with PREDICTION_LATENCY.time():
 
-        run_shadow_inference(input_df)
+            # Increment Counter
+            PREDICTION_COUNTER.inc()
 
-        prob = artifacts["model"].predict_proba(input_df)[:, 1][0]
-        prediction = 1 if prob >= artifacts["threshold"] else 0
-        
-        # Update Gauge
-        CHURN_PROBABILITY_GAUGE.set(prob)
-        
-        return {
-            "churn_prediction": int(prediction),
-            "churn_probability": float(prob),
-            "threshold_used": float(artifacts["threshold"])
-        }
+            simulate_drift()
+            
+            input_df = preprocess_input(customer.model_dump())
+
+            run_shadow_inference(input_df)
+
+            prob = artifacts["model"].predict_proba(input_df)[:, 1][0]
+            prediction = 1 if prob >= artifacts["threshold"] else 0
+            
+            # Update Gauge
+            CHURN_PROBABILITY_GAUGE.set(prob)
+            
+            return {
+                "churn_prediction": int(prediction),
+                "churn_probability": float(prob),
+                "threshold_used": float(artifacts["threshold"])
+            }
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
