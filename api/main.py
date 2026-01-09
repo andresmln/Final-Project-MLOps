@@ -182,7 +182,7 @@ def run_shadow_inference(input_df: pd.DataFrame):
 # 5. ENDPOINTS
 # ==========================================
 
-@app.on_event("startup")
+# @app.on_event("startup")
 def startup_event():
     load_artifacts()
 
