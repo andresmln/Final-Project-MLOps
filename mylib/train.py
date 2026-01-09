@@ -18,7 +18,9 @@ from sklearn.metrics import (
     confusion_matrix,
     ConfusionMatrixDisplay
 )
+from sklearn.calibration import calibration_curve
 from mylib.data_preprocess import get_processed_data
+
 
 load_dotenv()
 
@@ -122,7 +124,6 @@ def main():
         
         # Calculate optimal threshold
         best_threshold, max_f1 = find_best_threshold(y_val, y_proba_val)
-        
         print(f"🎯 Optimal Threshold found: {best_threshold:.4f} (Max F1: {max_f1:.4f})")
         mlflow.log_param("optimal_threshold", best_threshold)
         mlflow.log_metric("optimal_f1_score", max_f1)
@@ -158,6 +159,29 @@ def main():
         plt.savefig("confusion_matrix.png")
         plt.close()
         mlflow.log_artifact("confusion_matrix.png", artifact_path="plots")
+
+        # Log Calibration Plot 
+        # print("📊 Generating Calibration Curve...")
+
+        # 1. Get probablities for the Positive Class (1)
+        prob_true, prob_pred = calibration_curve(y_val, y_proba_val, n_bins=10)
+
+        # 2. Plot
+        plt.figure(figsize=(8, 6))
+        plt.plot(prob_pred, prob_true, marker='o', label='Calibrated XGBoost')
+        plt.plot([0, 1], [0, 1], linestyle='--', label='Perfectly Calibrated')
+        plt.xlabel('Mean Predicted Probability')
+        plt.ylabel('Fraction of Positives')
+        plt.title('Calibration Curve (Reliability Diagram)')
+        plt.legend()
+        plt.grid(True)
+
+        # 3. Save and Log
+        plt.savefig("calibration_curve.png", dpi=300)
+        plt.close()
+        mlflow.log_artifact("calibration_curve.png", artifact_path="plots")
+
+        print("✅ Calibration plot saved.")
 
         # ---------------------------------------------------------
         # PHASE D: ARTIFACT SERIALIZATION

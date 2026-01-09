@@ -5,6 +5,8 @@ global:
 scrape_configs:
   - job_name: 'churn-api-render'
     metrics_path: '/metrics'
-    scheme: http 
+    scheme: https
     static_configs:
-      - targets: ['localhost:8000']
+      - targets: ['mlops-final-project-p939.onrender.com:443']
+        labels:
+          env: 'production'

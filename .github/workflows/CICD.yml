@@ -40,6 +40,7 @@ jobs:
             - 'api/Dockerfile'
           frontend:
             - 'gui/**'
+
   # -----------------------------------------------------------
   # JOB 1: TRAIN & SERIALIZE
   # -----------------------------------------------------------
@@ -59,7 +60,8 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
-      # 2. Set up Python
+      # 2. Set up Pythondef test_clean_data_structure(raw_data):
+
       - name: Set up Python
         run: uv python install 3.10
 
@@ -159,7 +161,7 @@ jobs:
           curl -X POST "https://api.render.com/deploy/srv-d5bf210gjchc73c0b530?key=${{ secrets.RENDER_DEPLOY_HOOK_KEY }}"
 
   # -----------------------------------------------------------
-  # JOB 3: DEPLOY FRONTEND TO HUGGING FACE (Automated Temporar Branch)
+  # JOB 3: DEPLOY FRONTEND TO HUGGING FACE (Automated Temporary Branch)
   # -----------------------------------------------------------
   deploy-frontend-hf:
     needs: check-changes
