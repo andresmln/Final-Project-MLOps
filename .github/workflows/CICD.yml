@@ -104,14 +104,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: model-artifacts
+          if-no-files-found: error
           path: |
-            model.joblib
-            shadow_model.joblib
-            scaler.joblib
-            feature_names.joblib
-            threshold.joblib
-            metrics.json
-            mlruns/
+            api/models_local/model.joblib
+            api/models_local/shadow_model.joblib
+            api/models_local/scaler.joblib
+            api/models_local/feature_names.joblib
+            api/models_local/threshold.joblib
       
       # 8. CLEANUP
       - name: Remove MLFlow Directory
@@ -138,7 +137,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: model-artifacts
-          path: api/models_local 
+          path: .
 
       # 1 (alt)  If training was skipped, download the old model from history
       - name: Download OLD Model (Fallback)
@@ -148,7 +147,7 @@ jobs:
           workflow: CICD.yml
           workflow_conclusion: success   # Must be from a green run
           name: model-artifacts
-          path: api/models_local
+          path: .
           if_no_artifact_found: fail
           search_artifacts: true
 
@@ -157,36 +156,24 @@ jobs:
       - name: Flatten Artifacts Structure
         run: |
           echo "🔍 Searching for model.joblib..."
-          
-          # Path might be nested
-          FOUND_PATH=$(find api/models_local -name "model.joblib" -print -quit)
+          FOUND_PATH=$(find . -name "model.joblib" -print -quit)
           
           if [ -z "$FOUND_PATH" ]; then
-            echo "❌ ERROR: model.joblib not found anywhere in api/models_local!"
-            find api/models_local  # Print tree for debugging
+            echo "❌ ERROR: model.joblib not found!"
+            find . -maxdepth 4 
             exit 1
           fi
           
-          echo "✅ Found model at: $FOUND_PATH"
+          TARGET_PATH="./api/models_local/model.joblib"
           
-          # If it's not directly in api/models_local, move it
-          if [ "$FOUND_PATH" != "api/models_local/model.joblib" ]; then
-            echo "⚠️  Detected nesting! Moving files up..."
-            
-            # Get the directory containing the model
-            SOURCE_DIR=$(dirname "$FOUND_PATH")
-            
-            # Move contents to root of api/models_local
-            mv "$SOURCE_DIR"/* api/models_local/
-            
-            # Cleanup empty dir
-            rm -rf "$SOURCE_DIR"
-            echo "✅ Files moved."
+          if [ "$FOUND_PATH" != "$TARGET_PATH" ]; then
+            echo "⚠️  Moving artifact from $FOUND_PATH to $TARGET_PATH..."
+            mkdir -p api/models_local
+            mv "$(dirname "$FOUND_PATH")"/* api/models_local/
+            echo "✅ Moved."
           else
-            echo "✅ Files are already correct."
+            echo "✅ Files are correct."
           fi
-          
-          # Prove it
           ls -l api/models_local
 
       # 3. Setup environment for testing

@@ -87,29 +87,33 @@ artifacts = {
 
 def load_artifacts():
     try:
-        # 1. Get the directory where this script (main.py) is actually located
         current_dir = os.path.dirname(os.path.abspath(__file__))
-
-        # 2. Construct the absolute path to the 'models_local' folder inside 'api'
-        # This ensures it works whether you run 'pytest' from root or 'uvicorn' from api/
         default_path = os.path.join(current_dir, "models_local")
-
-        # 3. Use Environment Variable if set (for Docker), otherwise use the path we just built
         base_path = os.getenv("ARTIFACT_PATH", default_path)
         
         print(f"📂 Loading artifacts from: {base_path}")
         
+        # These must exist
         artifacts["model"] = joblib.load(os.path.join(base_path, "model.joblib"))
-        artifacts["shadow_model"] = joblib.load(os.path.join(base_path, "shadow_model.joblib"))
         artifacts["scaler"] = joblib.load(os.path.join(base_path, "scaler.joblib"))
         artifacts["feature_names"] = joblib.load(os.path.join(base_path, "feature_names.joblib"))
         artifacts["threshold"] = joblib.load(os.path.join(base_path, "threshold.joblib"))
         
+        # Shadow Model
+        shadow_path = os.path.join(base_path, "shadow_model.joblib")
+        if os.path.exists(shadow_path):
+            artifacts["shadow_model"] = joblib.load(shadow_path)
+            print("✅ Shadow model loaded.")
+        else:
+            print(f"⚠️ Shadow model not found at {shadow_path}. Running without it.")
+            artifacts["shadow_model"] = None
+            
         print("✅ Artifacts loaded successfully.")
+        
     except Exception as e:
         print(f"❌ Error loading artifacts: {e}")
-        # Optional: Print current working directory to help debug
-        print(f"PWD: {os.getcwd()}")
+        # Re-raise so the app fails startup if critical files are missing
+        raise e
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
