@@ -19,12 +19,28 @@ jobs:
   check-changes:
     runs-on: ubuntu-latest
     outputs:
-      # We define two flags: 'train' and 'backend'
-      train: ${{ steps.filter.outputs.train }}
-      backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
+      # Logic: Run if Manual Tag exists OR if specific files changed
+      train: ${{ steps.check_flags.outputs.run_all == 'true' || steps.filter.outputs.train == 'true' }}
+      backend: ${{ steps.check_flags.outputs.run_all == 'true' || steps.filter.outputs.backend == 'true' }}
+      frontend: ${{ steps.check_flags.outputs.run_all == 'true' || steps.filter.outputs.frontend == 'true' }}
     steps:
     - uses: actions/checkout@v4
+    
+    # 1. Check commit message for "[all]"
+    - name: Check for manual trigger flags
+      id: check_flags
+      run: |
+        # Get the commit message safely
+        MESSAGE="${{ github.event.head_commit.message }}"
+        
+        if [[ "$MESSAGE" == *"[all]"* ]]; then
+          echo "✅ Manual trigger '[all]' detected. Forcing all jobs to run."
+          echo "run_all=true" >> $GITHUB_OUTPUT
+        else
+          echo "run_all=false" >> $GITHUB_OUTPUT
+        fi
+        
+    # 2. Default filter logic
     - uses: dorny/paths-filter@v3
       id: filter
       with:
@@ -79,9 +95,9 @@ jobs:
           MLFLOW_TRACKING_URI: ${{ env.MLFLOW_DIR }}
         run: uv run python -m mylib.train_pipeline
 
-      # 6. Run Integration Tests
+      # 6. Run Artifact Tests
       - name: Run Integration Tests
-        run: uv run pytest tests/test_model_artifacts.py tests/test_api.py
+        run: uv run pytest tests/test_model_artifacts.py
 
       # 7. Save the trained model
       - name: Upload Artifacts
@@ -136,6 +152,22 @@ jobs:
           if_no_artifact_found: fail
           search_artifacts: true
 
+      # 2. Setup environment for testing
+      # We need Python & UV here now because we are running tests inside this job
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.10
+
+      - name: Install Dependencies
+        run: uv sync
+
+      # 3. Run API tests
+      # This runs before Docker Build. If this fails, we don't deploy.
+      - name: Run API Integration Tests
+        run: uv run pytest tests/test_api.py
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -145,7 +177,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # 2. Build & Push Image containing the NEW model
+      # 4. Build & Push Image containing the NEW model
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
@@ -154,7 +186,7 @@ jobs:
           push: true
           tags: ${{ env.DOCKER_IMAGE }}
 
-      # 3. Trigger Render to pull the new image
+      # 5. Trigger Render to pull the new image
       - name: Trigger Render Deploy
         run: |
           # Uses the Deploy Hook from Render Settings
