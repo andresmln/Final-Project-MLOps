@@ -75,8 +75,6 @@ def test_load_artifacts():
 def get_preprocessed_input():
     """
     LOCAL HELPER: Mimics the API preprocessing logic.
-    We do NOT use data_preprocess.py here because we need inference logic 
-    (transform, not fit) and reindexing.
     """
     base_path = "api/models_local"
     scaler = joblib.load(os.path.join(base_path, "scaler.joblib"))
@@ -84,16 +82,26 @@ def get_preprocessed_input():
 
     df = pd.DataFrame([VALID_RAW_INPUT])
     
-    binary_mapping = {'Yes': 1, 'No': 0, 'Female': 1, 'Male': 0}
-    for col in ['Partner', 'Dependents', 'PhoneService', 'PaperlessBilling', 'gender']:
+    # 1. Clean TotalCharges
+    if 'TotalCharges' in df.columns:
+        df['TotalCharges'] = pd.to_numeric(df['TotalCharges'], errors='coerce').fillna(0)
+    
+    # 2. Binary Mapping
+    binary_mapping = {'Yes': 1, 'No': 0, 'True': 1, 'False': 0, 'Female': 1, 'Male': 0}
+    binary_cols = ['Partner', 'Dependents', 'PhoneService', 'PaperlessBilling', 'gender', 'SeniorCitizen']
+    
+    for col in binary_cols:
         if col in df.columns:
-            df[col] = df[col].map(binary_mapping).fillna(0)
+            df[col] = df[col].map(binary_mapping).fillna(0).astype(int)
     
-    df = pd.get_dummies(df)
+    # 3. One-Hot Encoding -- CRITICAL FIX: dtype=int
+    # This prevents it from creating True/False boolean columns
+    df = pd.get_dummies(df, dtype=int)
     
-    # CRITICAL: Reindex to match training schema (The step data_preprocess lacks)
+    # 4. Reindex to match training schema
     df = df.reindex(columns=feature_names, fill_value=0)
     
+    # 5. Scale
     numeric_cols = ['tenure', 'MonthlyCharges', 'TotalCharges']
     df[numeric_cols] = scaler.transform(df[numeric_cols])
     
