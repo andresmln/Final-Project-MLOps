@@ -64,3 +64,8 @@ grafana_data/
 # Ignore specific files that we deleted in data 
 confusion_matrix.png
 processed_data_audit.csv
+
+# Ignore 
+api/models_local/
+api/monitor_reports/
+

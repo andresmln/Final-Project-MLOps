@@ -35,8 +35,8 @@ dependencies = [
     "optuna==3.6.1",
     "mlflow==2.11.3",
     # Deep learning (CPU-safe)
-    "torch>=2.8.0",
-    "torchvision>=0.23.0",
+    "torch>=2.7.0",
+    "torchvision>=0.15.0",
     "pytorch-tabnet",
     # Imaging
     "pillow==10.3.0",
@@ -46,26 +46,37 @@ dependencies = [
     "setuptools>=80.9.0",
 ]
 
+[project.optional-dependencies]
+gpu = []
 
 [tool.uv]
 package = true
 
 [[tool.uv.index]]
-name = "pytorch-cuda-128"
-url = "https://download.pytorch.org/whl/cu128" 
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [[tool.uv.index]]
-name = "pytorch-cuda-126"
-url = "https://download.pytorch.org/whl/cu126" 
+name = "cuda-129"
+url = "https://download.pytorch.org/whl/cu129"
 explicit = true
 
+[[tool.uv.index]]
+name = "cuda-126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+
+# 4. Use Markers to switch sources dynamically
 [tool.uv.sources]
 torch = [
-    { index = "pytorch-cuda-128" },
+    { index = "pytorch-cpu"} # , marker = "extra != 'gpu'" },
+    # { index = "cuda-129", marker = "extra == 'gpu'" }
 ]
 torchvision = [
-    { index = "pytorch-cuda-126"},
+    { index = "pytorch-cpu"} # , marker = "extra != 'gpu'" },
+    # { index = "cuda-126", marker = "extra == 'gpu'" }
 ]
 
 [tool.setuptools.packages.find]
