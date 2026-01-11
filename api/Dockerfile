@@ -1,25 +1,26 @@
-# 1. Base Image
-FROM python:3.10-slim-bullseye
+FROM python:3.10
 
-# 2. Set Working Directory
+# 1. Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 WORKDIR /app
 
-# 3. Install Dependencies FIRST (The Cache Fix)
-COPY requirements.txt . 
+# 2. Copy config files from Root
+COPY pyproject.toml uv.lock ./
 
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# 3. Install dependencies (uv handles the CPU/Linux logic automatically)
+RUN uv sync --frozen --no-cache
 
-# 4. Copy Code & Configuration
-# This copies everything (including pyproject.toml, api/ folder, etc.)
-COPY . api/
+# 4. Add venv to PATH (Crucial for uvicorn)
+ENV PATH="/app/.venv/bin:$PATH"
 
-# 5. Set Environment Variable
+# 5. Copy the 'api' folder structure
+COPY api/ api/
+
+# 6. Environment
 ENV PYTHONPATH=/app
 ENV ARTIFACT_PATH="/app/api/models_local"
 
-# 6. Expose Port 
 EXPOSE 8000
 
-# 7. Run Command
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

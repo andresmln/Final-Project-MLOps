@@ -50,7 +50,7 @@ jobs:
             - 'mylib/train_shadow.py'
             - 'mylib/data_preprocess.py'
             - 'archive/**'
-            - 'api/requirements.txt'
+            - 'uv.lock'
           backend:
             - 'api/**'
             - 'api/Dockerfile'
@@ -214,7 +214,7 @@ jobs:
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
-          context: api         
+          context: .         
           file: api/Dockerfile 
           push: true
           tags: ${{ env.DOCKER_IMAGE }}
