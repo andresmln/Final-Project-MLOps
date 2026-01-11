@@ -148,7 +148,7 @@ jobs:
           if_no_artifact_found: fail
           search_artifacts: true
 
-      # 2. Move Artifacts to API Folder
+      # 2. Move Artifacts (FIXED: No Recursive Move)
       - name: Flatten Artifacts Structure
         run: |
           echo "🔍 Searching for model.joblib..."
@@ -160,17 +160,26 @@ jobs:
             exit 1
           fi
           
+          # Prepare Target
+          TARGET_DIR="./api/models_local"
+          mkdir -p "$TARGET_DIR"
+          
+          # Define absolute path check (simple string comparison)
           TARGET_PATH="./api/models_local/model.joblib"
           
           if [ "$FOUND_PATH" != "$TARGET_PATH" ]; then
-            echo "⚠️  Moving artifact from $FOUND_PATH to $TARGET_PATH..."
-            mkdir -p api/models_local
-            # Move files (mv is fast and clears the source)
-            mv "$(dirname "$FOUND_PATH")"/* api/models_local/
-            echo "✅ Moved."
+            echo "⚠️  Found model at $FOUND_PATH. Moving artifacts..."
+            
+            # --- THE FIX IS HERE ---
+            # Only move .joblib files. NEVER move * (which includes the 'api' folder itself)
+            mv "$(dirname "$FOUND_PATH")"/*.joblib "$TARGET_DIR/"
+            echo "✅ Moved joblib files to $TARGET_DIR"
           else
-            echo "✅ Files are correct."
+            echo "✅ Files are already in the correct place."
           fi
+          
+          # Double check
+          ls -l api/models_local/
 
       # 3. Install & Test (Required before build)
       - name: Install uv
@@ -183,14 +192,13 @@ jobs:
         run: uv run pytest tests/test_api.py
 
       # 4. Free Disk Space Before Docker Build
-      # We delete everything NOT needed for the Docker build to prevent Errno 28
       - name: Nuke Junk to Free Space
         run: |
           echo "🧹 Cleaning up runner disk..."
-          rm -rf .git          # Delete git history (Heavy!)
-          rm -rf mlruns        # Delete MLflow logs
-          rm -rf .venv         # Delete local venv
-          rm -rf ~/.cache/uv   # Delete package cache
+          rm -rf .git          
+          rm -rf mlruns        
+          rm -rf .venv         
+          rm -rf ~/.cache/uv   
           echo "✅ Disk cleaned."
 
       - name: Set up Docker Buildx
@@ -206,8 +214,8 @@ jobs:
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
-          context: api         #  Only send 'api/' folder to Docker
-          file: api/Dockerfile # Points to the file location relative to repo root
+          context: api         
+          file: api/Dockerfile 
           push: true
           tags: ${{ env.DOCKER_IMAGE }}
 
