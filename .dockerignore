@@ -1,3 +1,7 @@
+# Ignore git history (often huge)
+.git
+.gitignore
+
 # Ignore huge data folders
 archive/
 data/
@@ -5,8 +9,18 @@ data/
 # Ignore logs and virtual environments
 mlruns/
 venv/
+env/
 .venv/
 .git/
+
+# Ignore large MLOps artifacts (datasets, models)
+# If you need these inside the image, download them during runtime or use a volume, 
+# don't bake them into the build if you are low on space.
+archive/
+*.pt
+*.pth
+*.h5
+*.csv
 
 # Ignore python cache
 __pycache__/

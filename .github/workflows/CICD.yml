@@ -117,7 +117,6 @@ jobs:
         if: always() # Run even if previous steps fail
         run: rm -rf ${{ env.MLFLOW_DIR }}
       
-
   # -----------------------------------------------------------
   # JOB 2: DEPLOY BACKEND TO RENDER
   # -----------------------------------------------------------
@@ -130,8 +129,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-
-      # 1. If training was run, download the new model
+      # 1. Download Model
       - name: Download NEW Model
         if: needs.train.result == 'success'
         uses: actions/download-artifact@v4
@@ -139,20 +137,18 @@ jobs:
           name: model-artifacts
           path: .
 
-      # 1 (alt)  If training was skipped, download the old model from history
       - name: Download OLD Model (Fallback)
         if: needs.train.result == 'skipped'
         uses: dawidd6/action-download-artifact@v6
         with:
           workflow: CICD.yml
-          workflow_conclusion: success   # Must be from a green run
+          workflow_conclusion: success
           name: model-artifacts
           path: .
           if_no_artifact_found: fail
           search_artifacts: true
 
-      # 2. Normalize file paths (GitHub actions issue)
-      # This script finds model.joblib wherever it is and moves it to api/models_local
+      # 2. Move Artifacts to API Folder
       - name: Flatten Artifacts Structure
         run: |
           echo "🔍 Searching for model.joblib..."
@@ -169,28 +165,33 @@ jobs:
           if [ "$FOUND_PATH" != "$TARGET_PATH" ]; then
             echo "⚠️  Moving artifact from $FOUND_PATH to $TARGET_PATH..."
             mkdir -p api/models_local
+            # Move files (mv is fast and clears the source)
             mv "$(dirname "$FOUND_PATH")"/* api/models_local/
             echo "✅ Moved."
           else
             echo "✅ Files are correct."
           fi
-          ls -l api/models_local
 
-      # 3. Setup environment for testing
-      # We need Python & UV here now because we are running tests inside this job
+      # 3. Install & Test (Required before build)
       - name: Install uv
         uses: astral-sh/setup-uv@v5
-
       - name: Set up Python
         run: uv python install 3.10
-
       - name: Install Dependencies
         run: uv sync
-
-      # 4. Run API tests
-      # This runs before Docker Build. If this fails, we don't deploy.
       - name: Run API Integration Tests
         run: uv run pytest tests/test_api.py
+
+      # 4. Free Disk Space Before Docker Build
+      # We delete everything NOT needed for the Docker build to prevent Errno 28
+      - name: Nuke Junk to Free Space
+        run: |
+          echo "🧹 Cleaning up runner disk..."
+          rm -rf .git          # Delete git history (Heavy!)
+          rm -rf mlruns        # Delete MLflow logs
+          rm -rf .venv         # Delete local venv
+          rm -rf ~/.cache/uv   # Delete package cache
+          echo "✅ Disk cleaned."
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -201,19 +202,17 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # 5. Build & Push Image containing the NEW model
+      # 5. Build & Push
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
-          context: .
-          file: api/Dockerfile
+          context: api         #  Only send 'api/' folder to Docker
+          file: api/Dockerfile # Points to the file location relative to repo root
           push: true
           tags: ${{ env.DOCKER_IMAGE }}
 
-      # 6. Trigger Render to pull the new image
       - name: Trigger Render Deploy
         run: |
-          # Uses the Deploy Hook from Render Settings
           curl -X POST "https://api.render.com/deploy/srv-d5bf210gjchc73c0b530?key=${{ secrets.RENDER_DEPLOY_HOOK_KEY }}"
 
   # -----------------------------------------------------------

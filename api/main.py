@@ -9,7 +9,7 @@ from prometheus_client import generate_latest
 from enum import Enum
 
 # IMPORT THE MONITORING LOGIC
-from api.monitoring import (
+from .monitoring import (
     PREDICTION_COUNTER, 
     CHURN_PROBABILITY_GAUGE, 
     PREDICTION_LATENCY,
