@@ -18,7 +18,7 @@ COPY . api/
 ENV PYTHONPATH=/app
 ENV ARTIFACT_PATH="/app/api/models_local"
 
-# 6. Expose Port 
+# 6. Expose Port
 EXPOSE 8000
 
 # 7. Run Command
